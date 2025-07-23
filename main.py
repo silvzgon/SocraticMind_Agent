@@ -83,7 +83,7 @@ def login(request: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter_by(username=request.username).first()
     if not user or not bcrypt.verify(request.password, user.password):
         raise HTTPException(status_code=401, detail="用户名或密码错误")
-    return {"msg": "登录成功", "user_id": user.id}
+    return {"msg": "登录成功", "user_id": user.id, "user_name": user.username}
 
 class ConversationCreateRequest(BaseModel):
     user_id: int
