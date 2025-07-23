@@ -8,11 +8,16 @@ export default function LoginPage() {
   const [account, setAccount] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
   const router = useRouter();
+  const [submitting, setSubmitting] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setSuccess("");
+
+    setSubmitting(true);
 
     try {
       const res = await fetch("http://localhost:8000/api/login", {
@@ -20,19 +25,23 @@ export default function LoginPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ username: account, password }),
       });
-
       if (!res.ok) {
         setError("用户名或密码错误");
+        setSubmitting(false);
         return;
       }
-
       const data = await res.json();
       const localStorage = safeLocalStorage();
       localStorage.setItem("isLogin", "1");
       localStorage.setItem("userId", data.user_id.toString());
-      router.push("/");
+      localStorage.setItem("userName", data.user_name);
+      setSuccess("登录成功，正在跳转...");
+      setTimeout(() => {
+        window.location.href = "/";
+      }, 1400);
     } catch (err) {
-      setError("网络错误，请稍后重试");
+      setError("错误，请稍后重试");
+      setSubmitting(false);
     }
   };
 
@@ -48,6 +57,7 @@ export default function LoginPage() {
     };
   }, []);
 
+  // 输入框聚焦&失焦样式
   const onFocus = (e: React.FocusEvent<HTMLInputElement>) =>
     (e.currentTarget.style.borderColor = "#1f94ac");
   const onBlur = (e: React.FocusEvent<HTMLInputElement>) =>
@@ -91,7 +101,7 @@ export default function LoginPage() {
               userSelect: "none",
             }}
           >
-            SocraticMind
+            Chat4Math
           </div>
         </div>
         <div style={{ width: "100%", marginBottom: 17 }}>
@@ -133,7 +143,7 @@ export default function LoginPage() {
             required
           />
         </div>
-        <div style={{ width: "100%", marginBottom: 9 }}>
+        <div style={{ width: "100%", marginBottom: 14 }}>
           <label
             htmlFor="login_password"
             style={{
@@ -179,8 +189,8 @@ export default function LoginPage() {
               background: "#fbebee",
               border: "1px solid #f3ccd1",
               borderRadius: 5,
-              padding: "8px 0",
-              margin: "5px 0 14px 0",
+              padding: "6px 0",
+              margin: "0 0 0 0",
               fontSize: 14.3,
               textAlign: "center",
               width: "100%",
@@ -190,19 +200,37 @@ export default function LoginPage() {
             {error}
           </div>
         )}
-
+        {success && (
+          <div
+            style={{
+              color: "#227b15",
+              background: "#f0fbee",
+              border: "1px solid #b2e4b9",
+              borderRadius: 5,
+              padding: "6px 0",
+              margin: "0 0 0 0",
+              fontSize: 14.3,
+              textAlign: "center",
+              width: "100%",
+              letterSpacing: ".03em",
+            }}
+          >
+            {success}
+          </div>
+        )}
         <button
           type="submit"
+          disabled={submitting}
           style={{
             width: "100%",
             padding: "12px 0",
             borderRadius: 8,
             border: "none",
-            background: "#1f94ac 70%",
+            background: submitting ? "#b5d3db" : "#1f94ac",
             color: "#fff",
             fontWeight: 600,
             fontSize: 17,
-            cursor: "pointer",
+            cursor: submitting ? "not-allowed" : "pointer",
             boxShadow: "0 1.5px 6px rgba(31,148,172,0.08)",
             margin: "13px 0 0 0",
             transition: "background .17s",
@@ -210,29 +238,32 @@ export default function LoginPage() {
             minHeight: 44,
             letterSpacing: ".02em",
           }}
-          onMouseOver={(e) =>
-            (e.currentTarget.style.background = "#156a7a")
-          }
-          onMouseOut={e =>
-            (e.currentTarget.style.background = "#1f94ac")
-         }
+          onMouseOver={(e) => {
+            if (!submitting) e.currentTarget.style.background = "#156a7a";
+          }}
+          onMouseOut={e => {
+            if (!submitting) e.currentTarget.style.background = "#1f94ac";
+          }}
         >
-          登录
+          {submitting ? "登录中..." : "登录"}
         </button>
-
-        <div style={{ margin: "0 0 0 0", width: "100%" }}>
+        <div style={{ margin: "10px 0 0 0", width: "100%" }}>
           <div
             style={{
               borderTop: "1px solid #ebf1f3",
-              margin: "24px 0 12px 0",
+              margin: "10px 0 12px 0",
             }}
           ></div>
-          <div style={{ textAlign: "center", margin: "0 0 9px 0", color: "#74899e", fontSize: 14, letterSpacing: 0.2 }}>
+          <div style={{ textAlign: "center", margin: "0 0 8px 0", color: "#74899e", fontSize: 14, letterSpacing: 0.2 }}>
             还没有账号？
           </div>
           <button
             type="button"
-            onClick={() => router.push("/register")}
+            onClick={() => {
+              setTimeout(() => {
+                router.push("/register");
+              }, 1400);
+            }}
             style={{
               width: "100%",
               padding: "11px 0",
