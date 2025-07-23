@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from enum import Enum as PyEnum
 from pydantic import BaseModel
 
-DATABASE_URL = "mysql+pymysql://root:123456@localhost:3306/chat4math"
+DATABASE_URL = "mysql+pymysql://root:123456@localhost:3306/SocraticMind"
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine,autocommit=False)
 Base = declarative_base()
