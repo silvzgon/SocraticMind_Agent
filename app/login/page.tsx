@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { safeLocalStorage } from "../utils";
 
 export default function LoginPage() {
@@ -9,7 +8,6 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
-  const router = useRouter();
   const [submitting, setSubmitting] = useState(false);
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -261,7 +259,7 @@ export default function LoginPage() {
             type="button"
             onClick={() => {
               setTimeout(() => {
-                router.push("/register");
+                window.location.href = "/register";
               }, 1400);
             }}
             style={{
