@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from enum import Enum as PyEnum
 from pydantic import BaseModel
 
+# to_do: check your mysql key, port and database
 DATABASE_URL = "mysql+pymysql://root:123456@localhost:3306/SocraticMind"
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(bind=engine,autocommit=False)
