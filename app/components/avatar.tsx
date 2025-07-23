@@ -1,15 +1,16 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import { safeLocalStorage } from "../utils";
 
 export function Avatar({
-  username = "U",
+  username = "",
 }: {
   username?: string;
   onLogout?: () => void;
 }) {
 
   const firstLetter =
-    username.trim().length > 0 ? username.trim()[0].toUpperCase() : "U";
+    username.trim().length > 0 ? username.trim()[0].toUpperCase() : "";
 
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -40,8 +41,8 @@ export function Avatar({
     >
       <div
         style={{
-          width: 40,
-          height: 40,
+          width: 32,
+          height: 32,
           borderRadius: "50%",
           background: "#1f94ac",
           color: "#fff",
@@ -50,7 +51,7 @@ export function Avatar({
           justifyContent: "center",
           fontWeight: "bold",
           fontSize: 18,
-          marginBottom: 5,
+          marginTop: 10,
           userSelect: "none",
           border: "2px solid #e6f7fe",
           boxShadow: "0 2px 8px rgba(31,148,172,0.12)",
@@ -61,13 +62,12 @@ export function Avatar({
       >
         {firstLetter}
       </div>
-
       {open && (
         <div
           style={{
             position: "absolute",
-            bottom: 5,
-            left: 48,
+            top: 10,
+            left: 40,
             background: "#fff",
             boxShadow: "0 2px 8px rgba(31,148,172,0.14)",
             borderRadius: 6,
@@ -93,7 +93,13 @@ export function Avatar({
             }}
             onClick={() => {
               setOpen(false);
-              router.push("login")
+              const localStorage = safeLocalStorage();
+              localStorage.setItem("isLogin", "0");
+              localStorage.removeItem("userId");
+              localStorage.removeItem("userName");
+              setTimeout(() => {
+                window.location.href = "/login";
+              }, 1400);
             }}
           >
             退出登录
