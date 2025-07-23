@@ -48,61 +48,72 @@ export default function LoginPage() {
     };
   }, []);
 
-  const onFocus = (e: React.FocusEvent<HTMLInputElement>) => e.currentTarget.style.borderColor = '#1f94ac';
-  const onBlur = (e: React.FocusEvent<HTMLInputElement>) => e.currentTarget.style.borderColor = '#e5e7eb';
+  const onFocus = (e: React.FocusEvent<HTMLInputElement>) =>
+    (e.currentTarget.style.borderColor = "#1f94ac");
+  const onBlur = (e: React.FocusEvent<HTMLInputElement>) =>
+    (e.currentTarget.style.borderColor = "#e5e7eb");
 
   return (
-    <div style={{
-      minHeight: "100vh",
-      background: "none",
-      display: "flex",
-      alignItems: "center",
-      justifyContent: "center",
-      fontFamily: "'Helvetica Neue',Helvetica,Arial,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif"
-    }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        background: "none",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily:
+          "'Helvetica Neue',Helvetica,Arial,'PingFang SC','Hiragino Sans GB','Microsoft YaHei',sans-serif",
+      }}
+    >
       <form
         onSubmit={handleLogin}
         style={{
           background: "#fff",
-          padding: "40px 32px",
-          borderRadius: 14,
-          boxShadow: "0 8px 32px rgba(31,148,172,0.10)",
-          minWidth: 300,
+          padding: "38px 30px 32px",
+          borderRadius: 18,
+          boxShadow: "0 8px 32px rgba(31,148,172,0.09)",
+          minWidth: 320,
           width: "100%",
-          maxWidth: 360,
+          maxWidth: 370,
           display: "flex",
           flexDirection: "column",
-          gap: 0
         }}
       >
-        <h2 style={{
-          textAlign: "center",
-          marginBottom: 15,
-          color: "#223",
-          fontSize: 22,
-          fontWeight: 600,
-          letterSpacing: 0.5
-        }}>用户登录</h2>
-
-        <div style={{ width: "100%", marginBottom: 18 }}>
+        <div style={{ marginBottom: 24, textAlign: "center" }}>
+          <div
+            style={{
+              display: "inline-flex",
+              color: "#1f94ac",
+              fontWeight: 700,
+              fontSize: 28,
+              letterSpacing: 1,
+              marginBottom: 2,
+              userSelect: "none",
+            }}
+          >
+            SocraticMind
+          </div>
+        </div>
+        <div style={{ width: "100%", marginBottom: 17 }}>
           <label
             htmlFor="login_account"
             style={{
               fontSize: 15,
-              color: "#495057",
-              marginBottom: 6,
+              color: "#546173",
+              marginBottom: 5,
               fontWeight: 500,
-              display: "block"
+              display: "block",
             }}
-          >账户</label>
+          >
+            账户
+          </label>
           <input
             id="login_account"
             type="text"
-            placeholder="请输入账户"
+            placeholder="请输入账户名"
             value={account}
-            onChange={e => setAccount(e.target.value)}
+            onChange={(e) => setAccount(e.target.value)}
             style={{
-              display: "block",
               minWidth: "100%",
               maxWidth: "100%",
               padding: "11px 12px",
@@ -112,8 +123,9 @@ export default function LoginPage() {
               background: "#fcfdff",
               boxSizing: "border-box",
               outline: "none",
-              transition: ".2s border-color",
-              marginBottom: 0
+              marginBottom: 0,
+              transition: ".18s border-color",
+              boxShadow: "0 3px 14px 0 rgba(180,227,247,0.07)",
             }}
             onFocus={onFocus}
             onBlur={onBlur}
@@ -121,26 +133,26 @@ export default function LoginPage() {
             required
           />
         </div>
-
-        <div style={{ width: "100%", marginBottom: 18 }}>
+        <div style={{ width: "100%", marginBottom: 9 }}>
           <label
             htmlFor="login_password"
             style={{
               fontSize: 15,
-              color: "#495057",
-              marginBottom: 6,
+              color: "#546173",
+              marginBottom: 5,
               fontWeight: 500,
-              display: "block"
+              display: "block",
             }}
-          >密码</label>
+          >
+            密码
+          </label>
           <input
             id="login_password"
             type="password"
             placeholder="请输入密码"
             value={password}
-            onChange={e => setPassword(e.target.value)}
+            onChange={(e) => setPassword(e.target.value)}
             style={{
-              display: "block",
               minWidth: "100%",
               maxWidth: "100%",
               padding: "11px 12px",
@@ -150,8 +162,9 @@ export default function LoginPage() {
               background: "#fcfdff",
               boxSizing: "border-box",
               outline: "none",
-              transition: ".2s border-color",
-              marginBottom: 0
+              marginBottom: 0,
+              transition: ".18s border-color",
+              boxShadow: "0 2px 10px 0 rgba(180,227,247,0.045)",
             }}
             onFocus={onFocus}
             onBlur={onBlur}
@@ -159,21 +172,21 @@ export default function LoginPage() {
             required
           />
         </div>
-
         {error && (
-          <div style={{
-            color: "#a7232a",
-            background: "#fbebee",
-            minWidth: "100%",
-            maxWidth: "100%",
-            border: "1px solid #f3ccd1",
-            borderRadius: 5,
-            padding: "7px 0",
-            marginTop: 10,
-            marginBottom: 18,
-            fontSize: 14,
-            textAlign: "center"
-          }}>
+          <div
+            style={{
+              color: "#a7232a",
+              background: "#fbebee",
+              border: "1px solid #f3ccd1",
+              borderRadius: 5,
+              padding: "8px 0",
+              margin: "5px 0 14px 0",
+              fontSize: 14.3,
+              textAlign: "center",
+              width: "100%",
+              letterSpacing: ".03em",
+            }}
+          >
             {error}
           </div>
         )}
@@ -182,25 +195,71 @@ export default function LoginPage() {
           type="submit"
           style={{
             width: "100%",
-            padding: "11px 0",
+            padding: "12px 0",
             borderRadius: 8,
             border: "none",
-            background: "#1f94ac",
+            background: "#1f94ac 70%",
             color: "#fff",
             fontWeight: 600,
             fontSize: 17,
             cursor: "pointer",
-            boxShadow: "0 1.5px 6px rgba(31,148,172,0.07)",
-            marginTop: 15,
-            transition: "background .22s",
-            lineHeight: 'normal',
-            minHeight: 44
+            boxShadow: "0 1.5px 6px rgba(31,148,172,0.08)",
+            margin: "13px 0 0 0",
+            transition: "background .17s",
+            lineHeight: "normal",
+            minHeight: 44,
+            letterSpacing: ".02em",
           }}
-          onMouseOver={e => e.currentTarget.style.background="#156a7a"}
-          onMouseOut={e => e.currentTarget.style.background="#1f94ac"}
+          onMouseOver={(e) =>
+            (e.currentTarget.style.background = "#156a7a")
+          }
+          onMouseOut={e =>
+            (e.currentTarget.style.background = "#1f94ac")
+         }
         >
           登录
         </button>
+
+        <div style={{ margin: "0 0 0 0", width: "100%" }}>
+          <div
+            style={{
+              borderTop: "1px solid #ebf1f3",
+              margin: "24px 0 12px 0",
+            }}
+          ></div>
+          <div style={{ textAlign: "center", margin: "0 0 9px 0", color: "#74899e", fontSize: 14, letterSpacing: 0.2 }}>
+            还没有账号？
+          </div>
+          <button
+            type="button"
+            onClick={() => router.push("/register")}
+            style={{
+              width: "100%",
+              padding: "11px 0",
+              borderRadius: 8,
+              border: "1.4px solid #c7e8f1",
+              background: "#fafeff",
+              color: "#1789a7",
+              fontWeight: 600,
+              fontSize: 16,
+              cursor: "pointer",
+              boxShadow: "0 1px 5px 0 rgba(180,227,247,0.05)",
+              transition: "background .20s, border-color .15s, color .13s",
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.background = "#ebf9fa";
+              e.currentTarget.style.borderColor = "#84d7eb";
+              e.currentTarget.style.color = "#156a7a";
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.background = "#fafeff";
+              e.currentTarget.style.borderColor = "#c7e8f1";
+              e.currentTarget.style.color = "#1789a7";
+            }}
+          >
+            注册
+          </button>
+        </div>
       </form>
     </div>
   );
