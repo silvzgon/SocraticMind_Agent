@@ -33,12 +33,16 @@ import dynamic from "next/dynamic";
 import { Selector, showConfirm } from "./ui-lib";
 import clsx from "clsx";
 import { isMcpEnabled } from "../mcp/actions";
+import { safeLocalStorage } from "../utils";
 
 const DISCOVERY = [
   { name: Locale.Plugin.Name, path: Path.Plugins },
   { name: "Stable Diffusion", path: Path.Sd },
   { name: Locale.SearchChat.Page.Title, path: Path.SearchChat },
 ];
+
+const localStorage = safeLocalStorage();
+const username = localStorage.getItem("userName") || "";
 
 const ChatList = dynamic(async () => (await import("./chat-list")).ChatList, {
   loading: () => null,
@@ -254,7 +258,7 @@ export function SideBar(props: { className?: string }) {
         title="NextChat"
         subTitle="Build your own AI assistant."
         // logo={<ChatGptIcon />}
-        logo={<Avatar username="Haruko" />}
+        logo={<Avatar username={username} />}
         shouldNarrow={shouldNarrow}
       >
         <div className={styles["sidebar-header-bar"]}>
