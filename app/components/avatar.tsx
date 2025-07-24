@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
-import { useRouter } from "next/navigation";
 import { safeLocalStorage } from "../utils";
+import { useAppConfig } from "../store/config";
 
 export function Avatar({
   username = "",
@@ -14,7 +14,7 @@ export function Avatar({
 
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
-  const router = useRouter();
+  const config = useAppConfig();
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -53,7 +53,6 @@ export function Avatar({
           fontSize: 18,
           marginTop: 10,
           userSelect: "none",
-          border: "2px solid #e6f7fe",
           boxShadow: "0 2px 8px rgba(31,148,172,0.12)",
           cursor: "pointer",
         }}
@@ -68,12 +67,11 @@ export function Avatar({
             position: "absolute",
             top: 10,
             left: 40,
-            background: "#fff",
+            background: config.theme === "dark" ? "#1f1f1f" : "#fff",
             boxShadow: "0 2px 8px rgba(31,148,172,0.14)",
             borderRadius: 6,
-            border: "1px solid #e6f7fe",
             zIndex: 100,
-            padding: "6px 0",
+            padding: "5px 0",
             display: "flex",
             alignItems: "center",
             height: 25,
@@ -83,7 +81,7 @@ export function Avatar({
             style={{
               padding: "0 16px",
               cursor: "pointer",
-              color: "#121211",
+              color: config.theme === "dark" ? "#a6a6a6" : "#121212",
               textAlign: "center",
               fontSize: 12,
               height: "100%",
@@ -102,7 +100,7 @@ export function Avatar({
               }, 1400);
             }}
           >
-            退出登录
+            { username.trim() === "" ? "登录" : "退出登录" }
           </div>
         </div>
       )}
