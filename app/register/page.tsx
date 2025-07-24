@@ -17,6 +17,14 @@ export default function RegisterPage() {
     setError("");
     setSuccess("");
 
+    if (!account || account.trim().length === 0) {
+      setError("用户名不能为空");
+      return;
+    }
+    if (!password || password.length < 6) {
+      setError("密码长度不能少于6位");
+      return;
+    }
     if (password !== password2) {
       setError("两次输入的密码不一致");
       return;
