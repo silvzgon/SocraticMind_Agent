@@ -86,6 +86,7 @@ export interface ChatSession {
   topic: string;
 
   memoryPrompt: string;
+  problemFramework?: string;
   messages: ChatMessage[];
   stat: ChatStat;
   lastUpdate: number;
@@ -106,6 +107,7 @@ function createEmptySession(): ChatSession {
     id: nanoid(),
     topic: DEFAULT_TOPIC,
     memoryPrompt: "",
+    problemFramework: undefined,
     messages: [],
     stat: {
       tokenCount: 0,
@@ -412,7 +414,75 @@ export const useChatStore = createPersistStore(
         const session = get().currentSession();
         const modelConfig = session.mask.modelConfig;
 
-        // MCP Response no need to fill template
+        // 第一次会话生成解题框架
+        if (!session.problemFramework && !isMcpResponse) {
+          const frameworkPrompt = `请你扮演一个苏格拉底式教学助手，根据下面给定的问题，进行解题步骤的划分。
+具体而言，你需要对每个解题步骤提出一个问题，并且提供对于这个问题的答案和得到这个答案的思路。
+
+下面是一个例子：
+步骤 1：
+    提问：如何描述气温温度 x 与降水量 y 之间的关系？
+    答案：使用线性回归模型来描述两者之间的关系。模型形式为 y = ax + b。
+    描述：
+        1. 观察给定数据，注意到 y 随着 x 的增长接近线性，推测两者之间存在线性关系；
+        2. 假设模型形式为 y = ax + b，其中 a 是斜率，b 是截距。
+步骤 2：
+    提问：给定的数据是否有缺失或异常？
+    答案：数据无缺失或异常。
+    描述：
+        1. 检查数据的完整性，可以看到无缺失或异常。
+步骤 3：
+    提问：如何定义误差，并以此作为优化的目标？
+    答案：误差函数为 L(a, b) = Σ(y_i - ax_i - b)^2。
+    描述：
+        1. 计算模型预测值与实际值的残差 ε_i = y_i - (ax_i + b)；
+        2. 定义残差平方和 L(a, b) = Σ(y_i - ax_i - b)^2 作为优化目标。
+步骤 4：
+    提问：如何通过优化目标函数来求解参数 a 和 b？
+    答案：参数 b 的公式为 b = ȳ - a*x̄；参数 a 的公式为 a = Σ(x_i*y_i - n*x̄*ȳ) / Σ(x_i^2 - n*x̄^2)。
+    描述：
+        1. 对 L(a, b) 关于 b 求偏导数并设为零，推导得到 b = ȳ - a*x̄；
+        2. 将 b 的表达式代入 L(a, b) 对 a 求偏导数并设为零，推导得到 a 的公式a = Σ(x_i*y_i - n*x̄*ȳ) / Σ(x_i^2 - n*x̄^2)。
+步骤5：
+    提问：如何使用给定的数据计算 a 和 b 的具体值？
+    答案：计算得出参数 a = 1.632，b = -5.081。
+    描述：
+        1. 计算 x 和 y 的均值 x̄ 和 ȳ；
+        2. 计算 Σ(x_i*y_i) 和 Σ(x_i^2)；
+        3. 将这些值代入公式中，求得 a 和 b 的具体数值为 1.632 和 -5.081。
+步骤6：
+    提问：最终的线性回归模型是什么样的？
+    答案：最终回归模型为 y = 1.632x - 5.081。
+    描述：
+        1. 将已求得的 a 和 b 代入线性模型方程 y = ax + b；
+        2. 得到最终的回归模型方程 y = 1.632x - 5.081。
+
+请注意：
+1、你需要进行合适的步骤划分，使得这些问题对于学生而言是合适的；
+2、对于每一个步骤的描述请尽量简洁；
+3、用到公式进行计算时，请给出公式；
+4、涉及到代入计算得到结果/公式的步骤，请在相应的描述中写明最后的计算结果；
+5、如果需要，请写代码并运行来回答问题，以保证正确性；
+6、请严格按照例子给出的格式进行输出，不要有多余的输出。
+下面是你需要进行步骤划分的题目：${content}`;
+          const api: ClientApi = getClientApi(modelConfig.providerName);
+          try {
+            const frameworkResponse = await api.llm.chat({
+              messages: [{ role: "user", content: frameworkPrompt }],
+              config: { ...modelConfig, stream: false },
+              onFinish: (message) => {
+                session.problemFramework = message;
+                get().updateTargetSession(session, (s) => {
+                  s.problemFramework = message;
+                });
+              }, // 添加空的 onFinish 回调以满足 ChatOptions 类型要求
+            });
+          } catch (error) {
+            console.error("生成解题框架失败:", error);
+          }
+        }
+
+  // MCP Response no need to fill template
         let mContent: string | MultimodalContent[] = isMcpResponse
           ? content
           : fillTemplateWith(content, modelConfig);
@@ -631,9 +701,13 @@ export const useChatStore = createPersistStore(
         // concat all messages
         const recentMessages = [
           ...systemPrompts,
-          ...longTermMemoryPrompts,
-          ...contextPrompts,
-          ...reversedRecentMessages.reverse(),
+        ...(session.problemFramework ? [createMessage({
+          role: "system",
+          content: `解题框架: ${session.problemFramework}`,
+        })] : []),
+        ...longTermMemoryPrompts,
+        ...contextPrompts,
+        ...reversedRecentMessages.reverse(),
         ];
 
         return recentMessages;

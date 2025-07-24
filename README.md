@@ -28,3 +28,7 @@
     `role` VARCHAR(20) NOT NULL,
     `content` TEXT, `created_at` DATETIME, PRIMARY KEY (`id`) ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
   ```
++ **改动by junqi**
+1.修改了主题样式，包括部分文字和主题颜色，主题颜色可以在styles/globals.scss中找到，主要为primary和second的颜色；
+2.修改了chat.ts的部分逻辑，主要会让第一次对话先生成解题步骤，后续对话都会使用这个解题步骤，保存在session.problemFramework中；
+3.增删了预设面具，主要添加了自定义的苏格拉底导师，提示词等可见public/masks.json；  
