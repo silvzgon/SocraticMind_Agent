@@ -44,7 +44,7 @@ export function Avatar({
           width: 32,
           height: 32,
           borderRadius: "50%",
-          background: "#1f94ac",
+          background: "#cab68e",
           color: "#fff",
           display: "flex",
           alignItems: "center",

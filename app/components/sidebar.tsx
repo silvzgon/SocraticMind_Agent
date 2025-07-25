@@ -9,7 +9,7 @@ import GithubIcon from "../icons/github.svg";
 import { Avatar } from "./avatar";
 import AddIcon from "../icons/add.svg";
 import DeleteIcon from "../icons/delete.svg";
-import MaskIcon from "../icons/mask.svg";
+// import MaskIcon from "../icons/mask.svg";
 import McpIcon from "../icons/mcp.svg";
 import DragIcon from "../icons/drag.svg";
 import DiscoveryIcon from "../icons/discovery.svg";
@@ -28,11 +28,13 @@ import {
 } from "../constant";
 
 import { Link, useNavigate } from "react-router-dom";
-import { isIOS, useMobileScreen } from "../utils";
+import { isIOS, useMobileScreen, safeLocalStorage } from "../utils";
 import dynamic from "next/dynamic";
 import { Selector, showConfirm } from "./ui-lib";
 import clsx from "clsx";
 import { isMcpEnabled } from "../mcp/actions";
+
+const localStorage = safeLocalStorage()
 
 const DISCOVERY = [
   { name: Locale.Plugin.Name, path: Path.Plugins },
@@ -252,9 +254,9 @@ export function SideBar(props: { className?: string }) {
     >
       <SideBarHeader
         title="SocraticMind"
-        subTitle="Learn by questioning. Think by responding."
+        subTitle="以问促学，以答促思"
         // logo={<ChatGptIcon />}
-        logo={<Avatar username="Haruko" />}
+        logo={<Avatar username={localStorage.getItem("userName") || ""} />}
         shouldNarrow={shouldNarrow}
       >
         <div className={styles["sidebar-header-bar"]}>
