@@ -15,7 +15,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { Path } from "../constant";
 import { MaskAvatar } from "./mask";
 import { Mask } from "../store/mask";
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useMemo } from "react";
 import { showConfirm } from "./ui-lib";
 import { useMobileScreen } from "../utils";
 import clsx from "clsx";
@@ -115,15 +115,20 @@ export function ChatList(props: { narrow?: boolean }) {
   const navigate = useNavigate();
   const isMobileScreen = useMobileScreen();
 
-  let filtered = sessions
-    .map((item, i) => ({ item, i }))
-    .filter(({ item }) => !item.userId || item.userId === localStorage.getItem("userId"));
-  console.log('All sessions:', sessions);
+  const filtered = useMemo(() => {
+    return sessions
+      .map((item, i) => ({ item, i }))
+      .filter(({ item }) => !item.userId || item.userId === localStorage.getItem('userId'));
+  }, [sessions, localStorage.getItem('userId')]);
+
+  const hasCreatedSessionRef = useRef(false);
 
   useEffect(() => {
-    if (filtered.length === 0) {
+    if (filtered.length === 0 && !hasCreatedSessionRef.current) {
+      hasCreatedSessionRef.current = true;
       chatStore.newSession();
-    } else {
+    } else if (filtered.length > 0) {
+      hasCreatedSessionRef.current = false;
       selectSession(filtered[0].i);
     }
   }, [filtered.length, chatStore.newSession, selectSession]);
