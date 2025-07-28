@@ -83,6 +83,7 @@ export interface ChatStat {
 
 export interface ChatSession {
   id: string;
+  userId?: string;
   topic: string;
 
   memoryPrompt: string;
@@ -106,6 +107,7 @@ function createEmptySession(): ChatSession {
   return {
     id: nanoid(),
     topic: DEFAULT_TOPIC,
+    userId: localStorage.getItem("userId") || undefined,
     memoryPrompt: "",
     problemFramework: undefined,
     messages: [],
@@ -307,6 +309,13 @@ export const useChatStore = createPersistStore(
       },
 
       newSession(mask?: Mask) {
+        if (localStorage.getItem("isLogin") !== "1") {
+          setTimeout(() => {
+            window.location.href = "/login";
+          }, 1400);
+          return;
+        }
+
         const session = createEmptySession();
 
         if (mask) {
@@ -330,14 +339,42 @@ export const useChatStore = createPersistStore(
       },
 
       nextSession(delta: number) {
-        const n = get().sessions.length;
+        const sessions = get().sessions;
+        const filtered = sessions
+          .map((item, i) => ({ item, i }))
+          .filter(({ item }) => item.userId === localStorage.getItem("userId"));
+
+        const currentIdx = get().currentSessionIndex;
+        const filteredIdx = filtered.findIndex(({ i }) => i === currentIdx);
+
+        if (filteredIdx === -1) {
+          if (filtered.length > 0) {
+            get().selectSession(filtered[0].i);
+          }
+          return;
+        }
+
+        const n = filtered.length;
         const limit = (x: number) => (x + n) % n;
-        const i = get().currentSessionIndex;
-        get().selectSession(limit(i + delta));
+        const nextFilteredIdx = limit(filteredIdx + delta);
+
+        const nextOriginalIdx = filtered[nextFilteredIdx].i;
+        get().selectSession(nextOriginalIdx);
+
       },
 
       deleteSession(index: number) {
-        const deletingLastSession = get().sessions.length === 1;
+        if (localStorage.getItem("isLogin") !== "1") {
+          setTimeout(() => {
+            window.location.href = "/login";
+          }, 1400);
+          return;
+        }
+
+        const filtered = get().sessions.filter(
+          (session) => session.userId === localStorage.getItem("userId")
+        );
+        const deletingLastSession = filtered.length === 1;
         const deletedSession = get().sessions.at(index);
 
         if (!deletedSession) return;

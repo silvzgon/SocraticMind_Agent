@@ -115,6 +115,19 @@ export function ChatList(props: { narrow?: boolean }) {
   const navigate = useNavigate();
   const isMobileScreen = useMobileScreen();
 
+  let filtered = sessions
+    .map((item, i) => ({ item, i }))
+    .filter(({ item }) => !item.userId || item.userId === localStorage.getItem("userId"));
+  console.log('All sessions:', sessions);
+
+  useEffect(() => {
+    if (filtered.length === 0) {
+      chatStore.newSession();
+    } else {
+      selectSession(filtered[0].i);
+    }
+  }, [filtered.length, chatStore.newSession, selectSession]);
+
   const onDragEnd: OnDragEndResponder = (result) => {
     const { destination, source } = result;
     if (!destination) {
@@ -128,7 +141,9 @@ export function ChatList(props: { narrow?: boolean }) {
       return;
     }
 
-    moveSession(source.index, destination.index);
+    const src = filtered[source.index].i;
+    const dst = filtered[destination.index].i;
+    moveSession(src, dst);
   };
 
   return (
@@ -140,14 +155,14 @@ export function ChatList(props: { narrow?: boolean }) {
             ref={provided.innerRef}
             {...provided.droppableProps}
           >
-            {sessions.map((item, i) => (
+            {filtered.map(({ item, i }, filteredId) => (
               <ChatItem
                 title={item.topic}
                 time={new Date(item.lastUpdate).toLocaleString()}
                 count={item.messages.length}
                 key={item.id}
                 id={item.id}
-                index={i}
+                index={filteredId}
                 selected={i === selectedIndex}
                 onClick={() => {
                   navigate(Path.Chat);

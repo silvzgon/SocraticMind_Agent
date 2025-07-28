@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { safeLocalStorage } from "../utils";
+import { useChatStore } from "../store";
 
 export default function LoginPage() {
   const [account, setAccount] = useState("");
@@ -9,6 +10,9 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const chatStore = useChatStore();
+  const sessions = chatStore.sessions;
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,6 +38,14 @@ export default function LoginPage() {
       localStorage.setItem("userId", data.user_id.toString());
       localStorage.setItem("userName", data.user_name);
       setSuccess("登录成功，正在跳转...");
+      sessions.forEach((session) => {
+        if (!session.userId) {
+          chatStore.updateTargetSession(
+            session,
+            (session) => (session.userId = data.user_id.toString()),
+          );
+        }
+      });
       setTimeout(() => {
         window.location.href = "/";
       }, 1400);
@@ -44,7 +56,6 @@ export default function LoginPage() {
   };
 
   useEffect(() => {
-    // 米黄色背景 + 渐变 + 装饰圆/点
     document.body.style.background =
       "linear-gradient(120deg, #f4efe0 0%, #f9f5ec 100%)" +
       ", url('data:image/svg+xml;utf8,\
