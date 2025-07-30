@@ -85,10 +85,6 @@ export async function getProblemFramework(
   problem: string,
   modelConfig: ModelConfig,
 ): Promise<string | undefined> {
-  if (typeof window !== "undefined") {
-    window.alert("解题框架生成函数已被调用");
-  }
-
   // 第一步：生成解题框架
   let framework: string = "";
   const api: ClientApi = getClientApi(modelConfig.providerName);
