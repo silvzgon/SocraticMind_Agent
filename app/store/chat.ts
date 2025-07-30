@@ -452,19 +452,6 @@ export const useChatStore = createPersistStore(
         const session = get().currentSession();
         const modelConfig = session.mask.modelConfig;
 
-        // 第一次会话生成解题框架
-        if (!session.problemFramework && !isMcpResponse) {
-          const frameworkPrompt = Prompts.solve_problem.replace(
-            "${content}",
-            content,
-          );
-          const api: ClientApi = getClientApi(modelConfig.providerName);
-          session.problemFramework = await getProblemFramework(
-            content,
-            modelConfig,
-          );
-        }
-
         // MCP Response no need to fill template
         let mContent: string | MultimodalContent[] = isMcpResponse
           ? content
@@ -510,6 +497,81 @@ export const useChatStore = createPersistStore(
         });
 
         const api: ClientApi = getClientApi(modelConfig.providerName);
+
+        // 实现自定义苏格拉底逻辑
+        let currentRole: string = Prompts.teacher;
+        // 第一次会话判断问题并生成解题框架
+        if (!session.problemFramework && !isMcpResponse) {
+          const frameworkPrompt = Prompts.solve_problem.replace(
+            "${content}",
+            content,
+          );
+          const api: ClientApi = getClientApi(modelConfig.providerName);
+          session.problemFramework = await getProblemFramework(
+            content,
+            modelConfig,
+          );
+        }
+        // 第一次之后对话之后，判断学生认知状态，做出相应回答
+        else {
+          let studentCase: string = "";
+          const switchMessage: ChatMessage = createMessage({
+            role: "system",
+            content: Prompts.switch,
+          });
+          const switchMessages = sendMessages.concat(switchMessage);
+          await api.llm.chat({
+            messages: switchMessages,
+            config: { ...modelConfig, stream: false },
+            onFinish: (message) => {
+              studentCase = message;
+            },
+          });
+          switch (studentCase) {
+            case "1":
+              currentRole = Prompts.case_1;
+              break;
+            case "2":
+              currentRole = Prompts.case_2;
+              break;
+            case "3":
+              currentRole = Prompts.case_3;
+              break;
+            case "4":
+              currentRole = Prompts.case_4;
+              break;
+            case "5":
+              currentRole = Prompts.case_5;
+              break;
+            case "6":
+              currentRole = Prompts.case_6;
+              break;
+            case "7":
+              currentRole = Prompts.case_7;
+              break;
+            case "8":
+              currentRole = Prompts.case_8;
+              break;
+            case "9":
+              currentRole = Prompts.case_9;
+              break;
+            case "10":
+              currentRole = Prompts.case_10;
+              break;
+            case "11":
+              currentRole = Prompts.case_11;
+              break;
+            default:
+              currentRole = Prompts.teacher;
+              break;
+          }
+        }
+        let roleMessage: ChatMessage = createMessage({
+          role: "system",
+          content: currentRole,
+        });
+        sendMessages.push(roleMessage);
+
         // make request
         api.llm.chat({
           messages: sendMessages,
