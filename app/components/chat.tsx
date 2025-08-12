@@ -1352,13 +1352,13 @@ function _Chat() {
       .concat(
         isLoading
           ? [
-              {
-                ...createMessage({
-                  role: "assistant",
-                  content: "……",
-                }),
-                preview: true,
-              },
+              // {
+              //   ...createMessage({
+              //     role: "assistant",
+              //     content: "……",
+              //   }),
+              //   preview: true,
+              // },
             ]
           : [],
       )

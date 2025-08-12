@@ -1941,7 +1941,7 @@ export function Settings() {
             }}
           />
         </List>
-        <List>
+        {/* <List>
           <TTSConfigList
             ttsConfig={config.ttsConfig}
             updateConfig={(updater) => {
@@ -1950,7 +1950,7 @@ export function Settings() {
               config.update((config) => (config.ttsConfig = ttsConfig));
             }}
           />
-        </List>
+        </List> */}
 
         <DangerItems />
       </div>

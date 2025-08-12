@@ -39,7 +39,6 @@ import { createEmptyMask, Mask } from "./mask";
 import { executeMcpAction, getAllTools, isMcpEnabled } from "../mcp/actions";
 import { extractMcpJson, isMcpJson } from "../mcp/utils";
 import { Prompts } from "../utils/prompts";
-import { getProblemFramework } from "../utils/problem-solving";
 
 const localStorage = safeLocalStorage();
 
@@ -481,7 +480,7 @@ export const useChatStore = createPersistStore(
 
         // get recent messages
         const recentMessages = await get().getMessagesWithMemory();
-        const sendMessages = recentMessages.concat(userMessage);
+        let sendMessages = recentMessages.concat(userMessage);
         const messageIndex = session.messages.length + 1;
 
         // save user's and bot's message
@@ -499,34 +498,185 @@ export const useChatStore = createPersistStore(
         const api: ClientApi = getClientApi(modelConfig.providerName);
 
         // 实现自定义苏格拉底逻辑
-        let currentRole: string = Prompts.teacher;
-        // 第一次会话判断问题并生成解题框架
+
+        let subjectCase: string = "";
+        let currentRole: string = "";
         if (!session.problemFramework && !isMcpResponse) {
-          const frameworkPrompt = Prompts.solve_problem.replace(
-            "${content}",
-            content,
-          );
           const api: ClientApi = getClientApi(modelConfig.providerName);
-          session.problemFramework = await getProblemFramework(
-            content,
-            modelConfig,
-          );
-        }
-        // 第一次之后对话之后，判断学生认知状态，做出相应回答
-        else {
-          let studentCase: string = "";
-          const switchMessage: ChatMessage = createMessage({
-            role: "system",
-            content: Prompts.switch,
-          });
-          const switchMessages = sendMessages.concat(switchMessage);
+
+          // call switch_subject
+          const messagesSwitchSubject: ChatMessage[] = [
+            createMessage({ role: "system" as const, content: Prompts.switch_subject }),
+            createMessage({ role: "user"   as const, content: content }),
+          ];
           await api.llm.chat({
-            messages: switchMessages,
+            messages: messagesSwitchSubject,
             config: { ...modelConfig, stream: false },
             onFinish: (message) => {
-              studentCase = message;
+              console.log("[Subject]", message);
+              const match = message.match(/[1-5]/);
+              if (match) {
+                subjectCase = match[0];
+              } else {
+                subjectCase = "5";
+              }
+            },
+            onError(error) {
+              const isAborted = error.message?.includes?.("aborted");
+              botMessage.content +=
+                "\n\n" +
+                prettyObject({
+                  error: true,
+                  message: error.message,
+                });
+              botMessage.streaming = false;
+              userMessage.isError = !isAborted;
+              botMessage.isError = !isAborted;
+              get().updateTargetSession(session, (session) => {
+                session.messages = session.messages.concat();
+              });
+              ChatControllerPool.remove(
+                session.id,
+                botMessage.id ?? messageIndex,
+              );
+              console.error("[Chat] failed ", error);
             },
           });
+
+          if (subjectCase === "1" || subjectCase === "2") {
+            currentRole = Prompts.teacher;
+
+            // call solve_problem
+            const messagesSolveProblem: ChatMessage[] = [
+              createMessage({ role: "system" as const, content: Prompts.solve_problem }),
+              createMessage({ role: "user"   as const, content: content }),
+            ];
+            let framework: string = "";
+            await api.llm.chat({
+              messages: messagesSolveProblem,
+              config: { ...modelConfig, stream: false },
+              onFinish: (message) => {
+                console.log("[Framework]", message);
+                framework = message;
+              },
+              onError(error) {
+                const isAborted = error.message?.includes?.("aborted");
+                botMessage.content +=
+                  "\n\n" +
+                  prettyObject({
+                    error: true,
+                    message: error.message,
+                  });
+                botMessage.streaming = false;
+                userMessage.isError = !isAborted;
+                botMessage.isError = !isAborted;
+                get().updateTargetSession(session, (session) => {
+                  session.messages = session.messages.concat();
+                });
+                ChatControllerPool.remove(
+                  session.id,
+                  botMessage.id ?? messageIndex,
+                );
+                console.error("[Chat] failed ", error);
+              },
+            });
+        
+            // call check_framework
+            const steps = "题目：\n" + content + "\n解题步骤：\n" + framework;
+            const system = Prompts.check_framework;
+            const user = Prompts.check_framework_user;
+            let messagesCheckFramework: ChatMessage[] = [
+              createMessage({ role: "system" as const, content: system }),
+              createMessage({ role: "user"   as const, content: steps }),
+            ];
+            let judge: string = ""
+            while (!judge.includes("【通过】")) {
+              await api.llm.chat({
+                messages: messagesCheckFramework,
+                config: { ...modelConfig, stream: false },
+                onFinish: (message) => {
+                  console.log("[Judge]", message);
+                  judge = message;
+                },
+                onError(error) {
+                  const isAborted = error.message?.includes?.("aborted");
+                  botMessage.content +=
+                    "\n\n" +
+                    prettyObject({
+                      error: true,
+                      message: error.message,
+                    });
+                  botMessage.streaming = false;
+                  userMessage.isError = !isAborted;
+                  botMessage.isError = !isAborted;
+                  get().updateTargetSession(session, (session) => {
+                    session.messages = session.messages.concat();
+                  });
+                  ChatControllerPool.remove(
+                    session.id,
+                    botMessage.id ?? messageIndex,
+                  );
+                  console.error("[Chat] failed ", error);
+                },
+              });
+              if (judge.includes("【通过】")) {
+                session.problemFramework = "题目：\n" + content + "\n解题步骤：\n" + framework;
+                break;
+              } else {
+                framework = judge.replace("【不通过】", "").trim();
+              }
+              messagesCheckFramework = messagesCheckFramework.concat([
+                createMessage({ role: "assistant" as const, content: judge }),
+                createMessage({ role: "user"      as const, content: user }),
+              ]);
+            }
+          } else {}
+
+          const framework: ChatMessage[] = [ createMessage({ role: "system" as const, content: session.problemFramework }) ];
+          sendMessages = framework.concat(recentMessages);
+          console.log("[SendMessages]", sendMessages);
+        }
+
+        else {
+
+          // call switch
+          let studentCase: string = "";
+          const messagesSwitch = sendMessages.concat(createMessage({ role: "system" as const, content: Prompts.switch }));
+          console.log("[Switch Messages]", messagesSwitch);
+          await api.llm.chat({
+            messages: messagesSwitch,
+            config: { ...modelConfig, stream: false },
+            onFinish: (message) => {
+              const match = message.match(/[1-8]/);
+              if (match) {
+                studentCase = match[0];
+              } else {
+                studentCase = "2";
+              }
+            },
+            onError(error) {
+                  const isAborted = error.message?.includes?.("aborted");
+                  botMessage.content +=
+                    "\n\n" +
+                    prettyObject({
+                      error: true,
+                      message: error.message,
+                    });
+                  botMessage.streaming = false;
+                  userMessage.isError = !isAborted;
+                  botMessage.isError = !isAborted;
+                  get().updateTargetSession(session, (session) => {
+                    session.messages = session.messages.concat();
+                  });
+                  ChatControllerPool.remove(
+                    session.id,
+                    botMessage.id ?? messageIndex,
+                  );
+                  console.error("[Chat] failed ", error);
+                },
+          });
+          console.log("[Student Case]", studentCase);
+
           switch (studentCase) {
             case "1":
               currentRole = Prompts.case_1;
@@ -550,31 +700,98 @@ export const useChatStore = createPersistStore(
               currentRole = Prompts.case_7;
               break;
             case "8":
+              // call case8_switch
+              let case8Case = "";
+              const messagesCase8Switch: ChatMessage[] = sendMessages.concat(createMessage({ role: "system", content: Prompts.case_8_switch }));
+              await api.llm.chat({
+                messages: messagesCase8Switch,
+                config: { ...modelConfig, stream: false },
+                onFinish: (message) => {
+                  const match = message.match(/[1-4]/);
+                  if (match) {
+                    case8Case = match[0];
+                  } else {
+                    case8Case = "4";
+                  }
+                },
+                onError(error) {
+                      const isAborted = error.message?.includes?.("aborted");
+                      botMessage.content +=
+                        "\n\n" +
+                        prettyObject({
+                          error: true,
+                          message: error.message,
+                        });
+                      botMessage.streaming = false;
+                      userMessage.isError = !isAborted;
+                      botMessage.isError = !isAborted;
+                      get().updateTargetSession(session, (session) => {
+                        session.messages = session.messages.concat();
+                      });
+                      ChatControllerPool.remove(
+                        session.id,
+                        botMessage.id ?? messageIndex,
+                      );
+                      console.error("[Chat] failed ", error);
+                    },
+              });
+
+              // call case8_framework
+              let frameworkPrompt = ""
+              if (case8Case === "1") {
+                currentRole = Prompts.case_2;
+                break;
+              } else if (case8Case === "2") {
+                frameworkPrompt = Prompts.case_8_framework.replace("{content}", Prompts.case_8_content_2);
+              } else if (case8Case === "3") {
+                frameworkPrompt = Prompts.case_8_framework.replace("{content}", Prompts.case_8_content_3);
+              } else if (case8Case === "4") {
+                frameworkPrompt = Prompts.case_8_framework.replace("{content}", Prompts.case_8_content_4);
+              }
+              const messagesCase8Framework = sendMessages.concat(createMessage({ role: "system", content: frameworkPrompt }));
+              await api.llm.chat({
+                messages: messagesCase8Framework,
+                config: { ...modelConfig, stream: false },
+                onFinish: (message) => {
+                  session.problemFramework = message
+                },
+                onError(error) {
+                      const isAborted = error.message?.includes?.("aborted");
+                      botMessage.content +=
+                        "\n\n" +
+                        prettyObject({
+                          error: true,
+                          message: error.message,
+                        });
+                      botMessage.streaming = false;
+                      userMessage.isError = !isAborted;
+                      botMessage.isError = !isAborted;
+                      get().updateTargetSession(session, (session) => {
+                        session.messages = session.messages.concat();
+                      });
+                      ChatControllerPool.remove(
+                        session.id,
+                        botMessage.id ?? messageIndex,
+                      );
+                      console.error("[Chat] failed ", error);
+                    },
+              });
               currentRole = Prompts.case_8;
-              break;
-            case "9":
-              currentRole = Prompts.case_9;
-              break;
-            case "10":
-              currentRole = Prompts.case_10;
-              break;
-            case "11":
-              currentRole = Prompts.case_11;
               break;
             default:
               currentRole = Prompts.teacher;
               break;
           }
         }
-        let roleMessage: ChatMessage = createMessage({
-          role: "system",
-          content: currentRole,
-        });
-        sendMessages.push(roleMessage);
 
-        // make request
+        // call case
+        let messagesCase = sendMessages.concat(createMessage({ role: "system", content: currentRole }));
+        if (currentRole === Prompts.case_8) {
+          messagesCase = messagesCase.concat(createMessage({ role: "system", content: "修改后的解题步骤：" + session.problemFramework }))
+        }
+        console.warn("[SendMessages]", messagesCase);
         api.llm.chat({
-          messages: sendMessages,
+          messages: messagesCase,
           config: { ...modelConfig, stream: true },
           onUpdate(message) {
             botMessage.streaming = true;
@@ -750,7 +967,7 @@ export const useChatStore = createPersistStore(
             ? [
                 createMessage({
                   role: "system",
-                  content: `解题框架: ${session.problemFramework}`,
+                  content: `${session.problemFramework}`,
                 }),
               ]
             : []),

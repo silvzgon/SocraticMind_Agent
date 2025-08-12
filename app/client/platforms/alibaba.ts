@@ -93,6 +93,176 @@ export class QwenApi implements LLMApi {
     throw new Error("Method not implemented.");
   }
 
+  private async _assistantToolChat(options: ChatOptions): Promise<string> {
+    const payload = {
+      model: options.config.model,
+      enableCodeInterpreter: !! options.config.enableCodeInterpreter,
+      enableCalculator     : !! options.config.enableCalculator,
+      enableTextToImage    : !! options.config.enableTextToImage,
+      enableQuarkSearch    : !! options.config.enableQuarkSearch,
+      enableGenerateQRcode : !! options.config.enableGenerateQRcode,
+      enableGithubSearch   : !! options.config.enableGithubSearch,
+      messages: options.messages,
+    };
+  
+    try {
+      const response = await fetch("http://localhost:8000/api/assistant_tool_chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+  
+      if (!response.ok) {
+        throw new Error(`[Assistant tool] error: ${response.statusText}`);
+      }
+  
+      const data = await response.json();
+      options.onFinish?.(data.result, response);
+      return data.result || "";
+    } catch (error) {
+      console.error("[Assistant tool] failed:", error);
+      throw error;
+    }
+  }
+
+  private _assistantToolChatStream(options: ChatOptions): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket("ws://localhost:8000/ws/assistant_tool_chat_stream");
+  
+      ws.onopen = () => {
+        const payload = {
+          model: options.config.model,
+          enableCodeInterpreter: !! options.config.enableCodeInterpreter,
+          enableCalculator     : !! options.config.enableCalculator,
+          enableTextToImage    : !! options.config.enableTextToImage,
+          enableQuarkSearch    : !! options.config.enableQuarkSearch,
+          enableGenerateQRcode : !! options.config.enableGenerateQRcode,
+          enableGithubSearch   : !! options.config.enableGithubSearch,
+          messages: options.messages,
+        };
+        ws.send(JSON.stringify(payload));
+      };
+  
+      let result = "";
+  
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.error) {
+            reject(new Error(data.error));
+            ws.close();
+            return;
+          }
+          if (data.chunk === "[DONE]") {
+            ws.close();
+            resolve(result);
+            return;
+          }
+          if (data.chunk) {
+            result += data.chunk;
+            options.onUpdate?.(result, data.chunk);
+          }
+        } catch (e) {
+          console.warn("[Assistant tool] json parsing fail:", e);
+        }
+      };
+  
+      ws.onerror = (e) => {
+        reject(new Error("[Assistant tool] WebSocket error."));
+      };
+  
+      ws.onclose = () => {
+        if (result === "") {
+          reject(new Error("[Assistant tool] WebSocket shutdown without any data."));
+        }
+      };
+    });
+  }
+
+  private async _multimodalToolChat(options: ChatOptions): Promise<string> {
+    const payload = {
+      model: options.config.model,
+      enableOCR:         !! options.config.enableOCR,
+      ocrType:           !! options.config.ocrType,
+      enableFileReading: !! options.config.enableFileReading,
+      messages: options.messages,
+    };
+  
+    try {
+      const response = await fetch("http://localhost:8000/api/multimodal_tool_chat", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+  
+      if (!response.ok) {
+        throw new Error(`[Multimodal tool] error: ${response.statusText}`);
+      }
+  
+      const data = await response.json();
+      options.onFinish?.(data.result, response);
+      return data.result || "";
+    } catch (error) {
+      console.error("[Assistant tool] failed:", error);
+      throw error;
+    }
+  }
+  
+  private _multimodalToolChatStream(options: ChatOptions): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket("ws://localhost:8000/ws/multimodal_tool_chat_stream");
+  
+      ws.onopen = () => {
+        const payload = {
+          model: options.config.model,
+          enableOCR:         !! options.config.enableOCR,
+          ocrType:           !! options.config.ocrType,
+          enableFileReading: !! options.config.enableFileReading,
+          messages: options.messages,
+        };
+        ws.send(JSON.stringify(payload));
+      };
+  
+      let result = "";
+  
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.error) {
+            reject(new Error(data.error));
+            ws.close();
+            return;
+          }
+          if (data.chunk === "[DONE]") {
+            ws.close();
+            resolve(result);
+            return;
+          }
+          if (data.chunk) {
+            result += data.chunk;
+            options.onUpdate?.(result, data.chunk);
+          }
+        } catch (e) {
+          console.warn("[Multimodal tool] json parsing fail:", e);
+        }
+      };
+  
+      ws.onerror = (e) => {
+        reject(new Error("Multimodal tool] WebSocket error."));
+      };
+  
+      ws.onclose = () => {
+        if (result === "") {
+          reject(new Error("[Multimodal tool] WebSocket shutdown without any data."));
+        }
+      };
+    });
+  }
+
   async chat(options: ChatOptions) {
     const modelConfig = {
       ...useAppConfig.getState().modelConfig,
@@ -101,6 +271,32 @@ export class QwenApi implements LLMApi {
         model: options.config.model,
       },
     };
+
+    if (
+      !! options.config.enableCodeInterpreter ||
+      !! options.config.enableCalculator      ||
+      !! options.config.enableTextToImage     ||
+      !! options.config.enableQuarkSearch     ||
+      !! options.config.enableGenerateQRcode  ||
+      !! options.config.enableGithubSearch
+    ) {
+      if (options.config.stream)
+        this._assistantToolChatStream(options);
+      else
+        this._assistantToolChat(options);
+      return;
+    }
+
+    if (
+      !! options.config.enableOCR ||
+      !! options.config.enableFileReading
+    ) {
+      if (options.config.stream)
+        this._multimodalToolChatStream(options);
+      else
+        this._multimodalToolChat(options);
+      return;
+    }
 
     const visionModel = isVisionModel(options.config.model);
 

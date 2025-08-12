@@ -1,11 +1,31 @@
-from fastapi import FastAPI, HTTPException, Depends
+import os
+import re
 from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, ForeignKey, Enum
-from sqlalchemy.orm import sessionmaker, declarative_base, Session
-from passlib.hash import bcrypt
-from datetime import datetime
+from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
-from enum import Enum as PyEnum
+from sqlalchemy.orm import sessionmaker, declarative_base, Session
 from pydantic import BaseModel
+from enum import Enum as PyEnum
+import base64
+import openai
+import dashscope
+from typing import List
+from pathlib import Path
+from datetime import datetime
+
+env_file = ".env.local"
+if not os.path.exists(env_file):
+    raise FileNotFoundError(f"{env_file} file not exist.")
+
+pattern = re.compile(r'^ALIBABA_API_KEY\s*=\s*["\']?(.*?)["\']?$')
+
+with open(env_file, "r", encoding="utf-8") as f:
+    for line in f:
+        line = line.strip()
+        match = pattern.match(line)
+        if match:
+            value = match.group(1)
+            os.environ["DASHSCOPE_API_KEY"] = value
 
 # to_do: check your mysql key, port and database
 DATABASE_URL = "mysql+pymysql://root:123456@localhost:3306/SocraticMind"
@@ -49,13 +69,11 @@ class Conversation(Base):
     title = Column(String(255))
     created_at = Column(DateTime, default=datetime.utcnow)
 
-
 class Message(Base):
     __tablename__ = "messages"
     id = Column(Integer, primary_key=True, index=True)
     conversation_id = Column(Integer, ForeignKey("conversations.id"), nullable=False)
-    # 关键：用String替代Enum，直接存储字符串
-    role = Column(String(20), nullable=False)  # 存储'user'或'assistant'
+    role = Column(String(20), nullable=False)
     content = Column(Text, nullable=False)
     created_at = Column(DateTime, default=datetime.utcnow)
 
@@ -71,19 +89,19 @@ def get_db():
 @app.post("/api/register")
 def register(request: RegisterRequest, db: Session = Depends(get_db)):
     if db.query(User).filter_by(username=request.username).first():
-        raise HTTPException(status_code=400, detail="用户名已存在")
+        raise HTTPException(status_code=400, detail="username already exists")
     hashed = bcrypt.hash(request.password)
     user = User(username=request.username, password=hashed)
     db.add(user)
     db.commit()
-    return {"msg": "注册成功"}
+    return {"msg": "register success"}
 
 @app.post("/api/login")
 def login(request: LoginRequest, db: Session = Depends(get_db)):
     user = db.query(User).filter_by(username=request.username).first()
     if not user or not bcrypt.verify(request.password, user.password):
-        raise HTTPException(status_code=401, detail="用户名或密码错误")
-    return {"msg": "登录成功", "user_id": user.id, "user_name": user.username}
+        raise HTTPException(status_code=401, detail="username or password is incorrect")
+    return {"msg": "login success", "user_id": user.id, "user_name": user.username}
 
 class ConversationCreateRequest(BaseModel):
     user_id: int
@@ -91,15 +109,13 @@ class ConversationCreateRequest(BaseModel):
 
 @app.post("/api/conversation/create")
 def create_conversation(request: ConversationCreateRequest, db: Session = Depends(get_db)):
-    print("建立对话")
     conversation = Conversation(
         user_id=request.user_id,
         title=request.title or f"对话 {datetime.now().strftime('%Y-%m-%d %H:%M')}"
     )
     db.add(conversation)
     db.commit()
-    db.refresh(conversation)  # 刷新以确保获取到 id
-    print("确认conversation写入：", db.query(Conversation).filter_by(id=conversation.id).first())
+    db.refresh(conversation)
     return {"conversation_id": conversation.id, "title": conversation.title}
 
 class ConversationWithFirstMessageRequest(BaseModel):
@@ -113,12 +129,7 @@ def create_conversation_with_message(
     request: ConversationWithFirstMessageRequest,
     db: Session = Depends(get_db)
 ):
-    """
-    一次性创建对话 + 第一条消息
-    """
-    print("建立对话并保存第一条消息")
     try:
-        # 1. 创建 Conversation
         conversation = Conversation(
             user_id=request.user_id,
             title=request.title or f"对话 {datetime.now().strftime('%Y-%m-%d %H:%M')}"
@@ -127,7 +138,6 @@ def create_conversation_with_message(
         db.commit()
         db.refresh(conversation)
 
-        # 2. 创建第一条 Message
         message = Message(
             conversation_id=conversation.id,
             role=request.role,
@@ -138,7 +148,7 @@ def create_conversation_with_message(
         db.refresh(message)
 
         return {
-            "msg": "对话和消息创建成功",
+            "msg": "create conversation with message success",
             "conversation_id": conversation.id,
             "message_id": message.id,
             "title": conversation.title
@@ -146,8 +156,7 @@ def create_conversation_with_message(
 
     except Exception as e:
         db.rollback()
-        print(f"整体错误：{str(e)}")
-        raise HTTPException(status_code=500, detail="创建失败")
+        raise HTTPException(status_code=500, detail="create conversation with message error")
 
     finally:
         db.close()
@@ -160,39 +169,33 @@ class MessageSaveRequest(BaseModel):
 
 @app.post("/api/message/save")
 def save_message(request: MessageSaveRequest, db: Session = Depends(get_db)):
-    print("保存消息")
     try:
-        # 1. 验证对话存在性（排除外键问题）
         conversation = db.query(Conversation).get(request.conversation_id)
         if not conversation:
-            raise HTTPException(status_code=404, detail="对话不存在")
+            raise HTTPException(status_code=404, detail="save message error: conversation not found")
 
-        # 2. 创建消息对象
         message = Message(
             conversation_id=request.conversation_id,
-            role=request.role,  # 若用String类型，直接传字符串
-            # role=RoleEnum(request.role),  # 若用枚举，需转换
+            role=request.role,
+            # role=RoleEnum(request.role),
             content=request.content
         )
         db.add(message)
-        db.commit()  # 提交事务
+        db.commit()
 
-        # 3. 显式刷新对象，获取id（关键：捕获刷新时的错误）
         try:
             db.refresh(message)
         except Exception as e:
-            print(f"刷新对象时出错（导致回滚）：{str(e)}")  # 打印具体错误
-            raise  # 触发异常，让框架处理
+            raise
 
-        return {"msg": "保存成功", "message_id": message.id}
+        return {"msg": "save message success", "message_id": message.id}
 
     except Exception as e:
-        db.rollback()  # 手动回滚异常事务
-        print(f"整体错误：{str(e)}")
-        raise HTTPException(status_code=500, detail="保存失败")
+        db.rollback()
+        raise HTTPException(status_code=500, detail="save message error")
 
     finally:
-        db.close()  # 确保会话关闭
+        db.close()
 
 @app.get("/api/conversation/list")
 def list_conversations(user_id: int, db: Session = Depends(get_db)):
@@ -203,3 +206,316 @@ def list_conversations(user_id: int, db: Session = Depends(get_db)):
 def list_messages(conversation_id: int, db: Session = Depends(get_db)):
     messages = db.query(Message).filter_by(conversation_id=conversation_id).order_by(Message.created_at.asc()).all()
     return [{"id": m.id, "role": m.role, "content": m.content, "created_at": m.created_at} for m in messages]
+
+class ChatMessage(BaseModel):
+    role: str  # "user" or "assistant"
+    content: str
+
+class AssistantToolChatRequest(BaseModel):
+    model: str
+    enableCodeInterpreter : bool
+    enableCalculator      : bool
+    enableTextToImage     : bool
+    enableQuarkSearch     : bool
+    enableGenerateQRcode  : bool
+    enableGithubSearch    : bool
+    messages: List[ChatMessage]
+
+def get_assistant(request: AssistantToolChatRequest):
+    tools = []
+    if request.enableCodeInterpreter : tools.append({"type": "code_interpreter"})
+    if request.enableCalculator      : tools.append({"type": "calculator"})
+    if request.enableTextToImage     : tools.append({"type": "text_to_image"})
+    if request.enableQuarkSearch     : tools.append({"type": "quark_search"})
+    if request.enableGenerateQRcode  : tools.append({"type": "generate_qrcode"})
+    if request.enableGithubSearch    : tools.append({"type": "github_search"})
+
+    assistant = dashscope.Assistants.create(
+        model=request.model,
+        name="smart helper",
+        description="A tool helper.",
+        api_key=os.environ["DASHSCOPE_API_KEY"],
+        instructions="You are a helpful assistant. When asked a question, use tools wherever possible.",
+        tools=tools,
+        tool_choice="required",
+    )
+    if assistant.status_code != 200:
+        raise Exception(f"assistant setup error, with status code: {assistant.status_code}")
+
+    return assistant
+
+def verify_status_code(res):
+    if res.status_code != 200:
+        raise Exception(f"dashScope fail, with status code: {res.status_code}")
+
+@app.post("/api/assistant_tool_chat")
+def assistant_tool_chat(request: AssistantToolChatRequest):
+
+    try:
+        assistant = get_assistant(request)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Assistant setup error: {e}")
+
+    try:
+        thread = dashscope.Threads.create(api_key=os.environ["DASHSCOPE_API_KEY"])
+        verify_status_code(thread)
+
+        messages_user = [msg for msg in request.messages if msg.role == "user"]
+        if not messages_user:
+            raise HTTPException(status_code=400, detail="no uer input in request messages.")
+        user_input = messages_user[-1].content
+
+        message = dashscope.Messages.create(thread.id, content=user_input, api_key=os.environ["DASHSCOPE_API_KEY"])
+        verify_status_code(message)
+
+        run = dashscope.Runs.create(thread.id, assistant_id=assistant.id, stream=False, api_key=os.environ["DASHSCOPE_API_KEY"])
+        verify_status_code(run)
+
+        run = dashscope.Runs.wait(run.id, thread_id=thread.id, api_key=os.environ["DASHSCOPE_API_KEY"])
+        verify_status_code(run)
+
+        msgs = dashscope.Messages.list(thread.id, api_key=os.environ["DASHSCOPE_API_KEY"])
+        verify_status_code(msgs)
+
+        answer = msgs.data[0].content[0].text.value
+        return {"result": answer}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"[Assistant tool] error: {e}")
+
+@app.websocket("/ws/assistant_tool_chat_stream")
+async def websocket_assistant_tool_chat_stream(websocket: WebSocket):
+    await websocket.accept()
+
+    try:
+        data = await websocket.receive_json()
+
+        messages = data.get("messages", [])
+        request = AssistantToolChatRequest(
+            model = data.get("model"),
+            enableCodeInterpreter = data.get("enableCodeInterpreter"),
+            enableCalculator      = data.get("enableCalculator"),
+            enableTextToImage     = data.get("enableTextToImage"),
+            enableQuarkSearch     = data.get("enableQuarkSearch"),
+            enableGenerateQRcode  = data.get("enableGenerateQRcode"),
+            enableGithubSearch    = data.get("enableGithubSearch"),
+            messages = messages,
+        )
+
+        try:
+            assistant = get_assistant(request)
+        except Exception as e:
+            await websocket.send_json({"error": f"assistant setup error: {str(e)}"})
+            await websocket.close()
+            return
+
+        try:
+            thread = dashscope.Threads.create(api_key=os.environ["DASHSCOPE_API_KEY"])
+            verify_status_code(thread)
+
+            messages_user = [msg for msg in messages if msg.get('role') == "user"]
+            if not messages_user:
+                await websocket.send_json({"error": "no uer input in request messages."})
+                await websocket.close()
+                return
+
+            user_input = messages_user[-1].get("content")
+
+            message = dashscope.Messages.create(thread.id, content=user_input, api_key=os.environ["DASHSCOPE_API_KEY"])
+            verify_status_code(message)
+
+            run = dashscope.Runs.create(thread.id, assistant_id=assistant.id, stream=True, api_key=os.environ["DASHSCOPE_API_KEY"])
+
+            for event, data in run:
+                try:
+                    await websocket.send_json({"chunk": data.delta.content.text.value})
+                except:
+                    pass
+
+            await websocket.send_json({"chunk": "[DONE]"})
+            await websocket.close()
+
+        except Exception as e:
+            await websocket.send_json({"error": f"[Assistant tool] error: {str(e)}"})
+            await websocket.close()
+
+    except WebSocketDisconnect:
+        print("[Assistant tool] WebSocket disconnect")
+
+class MultimodalToolChatRequest(BaseModel):
+    model: str
+    enableOCR        : bool
+    ocrType          : bool
+    enableFileReading: bool
+    messages: List[ChatMessage]
+
+@app.post("/api/multimodal_tool_chat")
+def multimodal_tool_chat(request: MultimodalToolChatRequest):
+
+    try:
+
+        if request.enableOCR:
+            messages_user = [msg for msg in request.messages if msg.role == "user"]
+            if not messages_user:
+                raise HTTPException(status_code=400, detail="no uer input in request messages.")
+            image_path = messages_user[-1].content
+
+            if request.ocrType:
+                image = image_path
+            else:
+                try:
+                    with open(image_path, "rb") as image_file:
+                        base64_image = base64.b64encode(image_file.read()).decode("utf-8")
+                    format = os.path.splitext(image_path)[1][1:]
+                    if format in {"jpe", "jpeg", "jpg"}: format = "jpeg"
+                    if format in {"tif", "tiff"}       : format = "tiff"
+                    if format not in {"bmp", "jpeg", "png", "tiff", "webp", "heic"}:
+                        raise HTTPException(status_code=500, detail="[Multimodal tool] error: unsupported file format.")
+                    image = f"data:image/{format};base64,{base64_image}"
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"[Multimodal tool] unable to open target path: {e}")
+
+            messages = [{
+                "role": "user",
+                "content": [{
+                        "image":  image,
+                        "min_pixels": 28 * 28 * 4,
+                        "max_pixels": 28 * 28 * 8192,
+                        "enable_rotate": True,
+                    },
+                    {
+                        "text": "请提取图像中的题目与答题过程信息。要求准确无误的提取上述关键信息、不要遗漏和捏造虚假信息，模糊或者强光遮挡的单个文字可以用英文问号?代替。返回数据格式以json方式输出，格式为：{'题目': '...', '答题过程': '...'}"
+                    },],
+            }]
+            response = dashscope.MultiModalConversation.call(
+                api_key=os.getenv("DASHSCOPE_API_KEY"),
+                model="qwen-vl-ocr",
+                messages=messages,
+            )
+            return {"result": response["output"]["choices"][0]["message"].content[0]["text"]}
+
+        elif request.enableFileReading:
+            messages_user = [msg for msg in request.messages if msg.role == "user"]
+            if not messages_user:
+                raise HTTPException(status_code=400, detail="no uer input in request messages.")
+            file_path = messages_user[-1].content
+
+            client = openai.OpenAI(
+                api_key=os.getenv("DASHSCOPE_API_KEY"),
+                base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            )
+            file_object = client.files.create(file=Path(file_path), purpose="file-extract")
+
+            completion = client.chat.completions.create(
+                model="qwen-long",
+                messages=[
+                    {'role': 'system', 'content': 'You are a helpful assistant.'},
+                    {'role': 'system', 'content': f'fileid://{file_object.id}'},
+                    {'role': 'user', 'content': '这段代码实现了什么?'}
+                ],
+            )
+            return {"result": completion.choices[0].message.content}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"[Multimodal tool] error: {e}")
+
+@app.websocket("/ws/multimodal_tool_chat_stream")
+async def websocket_multimodal_tool_chat_stream(websocket: WebSocket):
+    await websocket.accept()
+
+    try:
+        data = await websocket.receive_json()
+
+        messages = data.get("messages", [])
+        request = MultimodalToolChatRequest(
+            model = data.get("model"),
+            enableOCR         = data.get("enableOCR"),
+            ocrType           = data.get("ocrType"),
+            enableFileReading = data.get("enableFileReading"),
+            messages = messages,
+        )
+
+        try:
+            messages_user = [msg for msg in request.messages if msg.role == "user"]
+            if not messages_user:
+                raise HTTPException(status_code=400, detail="no uer input in request messages.")
+            image_path = messages_user[-1].content
+
+            if request.enableOCR:
+
+                if request.ocrType:
+                    image = image_path
+                else:
+                    try:
+                        with open(image_path, "rb") as image_file:
+                            base64_image = base64.b64encode(image_file.read()).decode("utf-8")
+                        format = os.path.splitext(image_path)[1][1:]
+                        if format in {"jpe", "jpeg", "jpg"}: format = "jpeg"
+                        if format in {"tif", "tiff"}       : format = "tiff"
+                        if format not in {"bmp", "jpeg", "png", "tiff", "webp", "heic"}:
+                            raise HTTPException(status_code=500, detail="[Multimodal tool] error: unsupported file format.")
+                        image = f"data:image/{format};base64,{base64_image}"
+                    except Exception as e:
+                        raise HTTPException(status_code=500, detail=f"[Multimodal tool] unable to open target path: {e}")
+
+                messages = [{
+                    "role": "user",
+                    "content": [{
+                            "image":  image,
+                            "min_pixels": 28 * 28 * 4,
+                            "max_pixels": 28 * 28 * 8192,
+                            "enable_rotate": True,
+                        },
+                        {
+                            "text": "请提取图像中的题目与答题过程信息。要求准确无误的提取上述关键信息、不要遗漏和捏造虚假信息，模糊或者强光遮挡的单个文字可以用英文问号?代替。返回数据格式以json方式输出，格式为：{'题目': '...', '答题过程': '...'}"
+                        },],
+                }]
+                responses = dashscope.MultiModalConversation.call(
+                    api_key=os.getenv("DASHSCOPE_API_KEY"),
+                    model="qwen-vl-ocr",
+                    messages=messages,
+                    stream=True,
+                    incremental_output=True,
+                )
+                for response in responses:
+                    try:
+                        await websocket.send_json({"chunk": response["output"]["choices"][0]["message"].content[0]["text"]})
+                    except:
+                        pass
+
+            elif request.enableFileReading:
+                messages_user = [msg for msg in request.messages if msg.role == "user"]
+                if not messages_user:
+                    raise HTTPException(status_code=400, detail="no uer input in request messages.")
+                file_path = messages_user[-1].content
+
+                client = openai.OpenAI(
+                    api_key=os.getenv("DASHSCOPE_API_KEY"),
+                    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                )
+                file_object = client.files.create(file=Path(file_path), purpose="file-extract")
+
+                completion = client.chat.completions.create(
+                    model="qwen-long",
+                    messages=[
+                        {'role': 'system', 'content': 'You are a helpful assistant.'},
+                        {'role': 'system', 'content': f'fileid://{file_object.id}'},
+                        {'role': 'user', 'content': '这段代码实现了什么?'}
+                    ],
+                    stream=True,
+                    stream_options={"include_usage": True},
+                )
+                for chunk in completion:
+                    try: 
+                        await websocket.send_json({"chunk": chunk.choices[0].delta.content})
+                    except:
+                        pass
+                
+        except Exception as e:
+            await websocket.send_json({"error": f"[Multimodal tool] error: {str(e)}"})
+            await websocket.close()
+
+    except WebSocketDisconnect:
+        print("[Multimodal tool] WebSocket disconnect")
