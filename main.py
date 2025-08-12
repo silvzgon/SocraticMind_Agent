@@ -4,6 +4,7 @@ from sqlalchemy import create_engine, Column, Integer, String, Text, DateTime, F
 from fastapi import FastAPI, HTTPException, Depends, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import sessionmaker, declarative_base, Session
+from passlib.hash import bcrypt
 from pydantic import BaseModel
 from enum import Enum as PyEnum
 import base64
@@ -231,7 +232,7 @@ def get_assistant(request: AssistantToolChatRequest):
     if request.enableGithubSearch    : tools.append({"type": "github_search"})
 
     assistant = dashscope.Assistants.create(
-        model=request.model,
+        model="qwen-turbo",
         name="smart helper",
         description="A tool helper.",
         api_key=os.environ["DASHSCOPE_API_KEY"],
@@ -243,6 +244,28 @@ def get_assistant(request: AssistantToolChatRequest):
         raise Exception(f"assistant setup error, with status code: {assistant.status_code}")
 
     return assistant
+
+def get_user_input(msgs):
+    messages_user = [msg for msg in msgs if msg.role in ["user", "system"]]
+    if not messages_user:
+        return ""
+
+    user_input_parts = []
+    for msg in messages_user:
+        if msg.role == 'system':
+            content = msg.content
+            if content:
+                user_input_parts.append(f"[System]\n{content}")
+    last_user_message = None
+    for msg in reversed(messages_user):
+        if msg.role == 'user':
+            last_user_message = msg
+            break
+    if last_user_message:
+        content = last_user_message.content
+        if content:
+            user_input_parts.append(f"[User]\n{content}")
+    return "\n\n".join(user_input_parts)
 
 def verify_status_code(res):
     if res.status_code != 200:
@@ -260,10 +283,7 @@ def assistant_tool_chat(request: AssistantToolChatRequest):
         thread = dashscope.Threads.create(api_key=os.environ["DASHSCOPE_API_KEY"])
         verify_status_code(thread)
 
-        messages_user = [msg for msg in request.messages if msg.role == "user"]
-        if not messages_user:
-            raise HTTPException(status_code=400, detail="no uer input in request messages.")
-        user_input = messages_user[-1].content
+        user_input = get_user_input(request.messages)
 
         message = dashscope.Messages.create(thread.id, content=user_input, api_key=os.environ["DASHSCOPE_API_KEY"])
         verify_status_code(message)
@@ -315,13 +335,7 @@ async def websocket_assistant_tool_chat_stream(websocket: WebSocket):
             thread = dashscope.Threads.create(api_key=os.environ["DASHSCOPE_API_KEY"])
             verify_status_code(thread)
 
-            messages_user = [msg for msg in messages if msg.get('role') == "user"]
-            if not messages_user:
-                await websocket.send_json({"error": "no uer input in request messages."})
-                await websocket.close()
-                return
-
-            user_input = messages_user[-1].get("content")
+            user_input = get_user_input(request.messages)
 
             message = dashscope.Messages.create(thread.id, content=user_input, api_key=os.environ["DASHSCOPE_API_KEY"])
             verify_status_code(message)

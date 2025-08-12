@@ -9,6 +9,7 @@ import { indexedDBStorage } from "@/app/utils/indexedDB-storage";
 import { nanoid } from "nanoid";
 import type {
   ClientApi,
+  LLMConfig,
   MultimodalContent,
   RequestMessage,
 } from "../client/api";
@@ -32,13 +33,14 @@ import Locale, { getLang } from "../locales";
 import { prettyObject } from "../utils/format";
 import { createPersistStore } from "../utils/store";
 import { estimateTokenLength } from "../utils/token";
-import { ModelConfig, ModelType, useAppConfig } from "./config";
+import { ModelConfig, ModelType, SubmitKey, useAppConfig } from "./config";
 import { useAccessStore } from "./access";
 import { collectModelsWithDefaultModel } from "../utils/model";
 import { createEmptyMask, Mask } from "./mask";
 import { executeMcpAction, getAllTools, isMcpEnabled } from "../mcp/actions";
 import { extractMcpJson, isMcpJson } from "../mcp/utils";
 import { Prompts } from "../utils/prompts";
+import { send } from "node:process";
 
 const localStorage = safeLocalStorage();
 
@@ -513,33 +515,16 @@ export const useChatStore = createPersistStore(
             messages: messagesSwitchSubject,
             config: { ...modelConfig, stream: false },
             onFinish: (message) => {
-              console.log("[Subject]", message);
               const match = message.match(/[1-5]/);
               if (match) {
                 subjectCase = match[0];
               } else {
                 subjectCase = "5";
               }
+              console.log("[Subject]", subjectCase);
             },
-            onError(error) {
-              const isAborted = error.message?.includes?.("aborted");
-              botMessage.content +=
-                "\n\n" +
-                prettyObject({
-                  error: true,
-                  message: error.message,
-                });
-              botMessage.streaming = false;
-              userMessage.isError = !isAborted;
-              botMessage.isError = !isAborted;
-              get().updateTargetSession(session, (session) => {
-                session.messages = session.messages.concat();
-              });
-              ChatControllerPool.remove(
-                session.id,
-                botMessage.id ?? messageIndex,
-              );
-              console.error("[Chat] failed ", error);
+            onError: (error) => {
+              console.error("[Error] in switch_subject:", error);
             },
           });
 
@@ -551,33 +536,39 @@ export const useChatStore = createPersistStore(
               createMessage({ role: "system" as const, content: Prompts.solve_problem }),
               createMessage({ role: "user"   as const, content: content }),
             ];
+            const solve = await new Promise<string>((resolve, reject) => {
+              api.llm.chat({
+                messages: messagesSolveProblem,
+                config: { ...modelConfig, stream: false, enableCodeInterpreter: true },
+                onFinish: (message) => {
+
+                  const solve = "题目：\n" + content + "\n答案：\n" + message;
+                  // console.log("[Solve]", solve);
+                  resolve(solve);
+                },
+                onError: (error) => {
+                  console.error("[Error] in solve_problem:", error);
+                  reject(error);
+                },
+              });
+            });
+
+            // call get_framework
+            const newModelConfig: typeof modelConfig = { ...modelConfig, model: subjectCase === "1" ? "qwen-math-plus" : "qwen3-coder-plus" };
+            const messagesGetFramework: ChatMessage[] = [
+              createMessage({ role: "system" as const, content: Prompts.solve_problem }),
+              createMessage({ role: "user"   as const, content: solve }),
+            ];
             let framework: string = "";
             await api.llm.chat({
-              messages: messagesSolveProblem,
-              config: { ...modelConfig, stream: false },
+              messages: messagesGetFramework,
+              config: { ...newModelConfig, stream: false },
               onFinish: (message) => {
-                console.log("[Framework]", message);
                 framework = message;
+                // console.log("[Framework]", framework);
               },
               onError(error) {
-                const isAborted = error.message?.includes?.("aborted");
-                botMessage.content +=
-                  "\n\n" +
-                  prettyObject({
-                    error: true,
-                    message: error.message,
-                  });
-                botMessage.streaming = false;
-                userMessage.isError = !isAborted;
-                botMessage.isError = !isAborted;
-                get().updateTargetSession(session, (session) => {
-                  session.messages = session.messages.concat();
-                });
-                ChatControllerPool.remove(
-                  session.id,
-                  botMessage.id ?? messageIndex,
-                );
-                console.error("[Chat] failed ", error);
+                console.error("[Error] in get_framework:", error);
               },
             });
         
@@ -593,30 +584,13 @@ export const useChatStore = createPersistStore(
             while (!judge.includes("【通过】")) {
               await api.llm.chat({
                 messages: messagesCheckFramework,
-                config: { ...modelConfig, stream: false },
+                config: { ...newModelConfig, stream: false },
                 onFinish: (message) => {
-                  console.log("[Judge]", message);
                   judge = message;
+                  // console.log("[Judge]", judge);
                 },
                 onError(error) {
-                  const isAborted = error.message?.includes?.("aborted");
-                  botMessage.content +=
-                    "\n\n" +
-                    prettyObject({
-                      error: true,
-                      message: error.message,
-                    });
-                  botMessage.streaming = false;
-                  userMessage.isError = !isAborted;
-                  botMessage.isError = !isAborted;
-                  get().updateTargetSession(session, (session) => {
-                    session.messages = session.messages.concat();
-                  });
-                  ChatControllerPool.remove(
-                    session.id,
-                    botMessage.id ?? messageIndex,
-                  );
-                  console.error("[Chat] failed ", error);
+                  console.error("[Error] in check_framework:", error);
                 },
               });
               if (judge.includes("【通过】")) {
@@ -630,7 +604,13 @@ export const useChatStore = createPersistStore(
                 createMessage({ role: "user"      as const, content: user }),
               ]);
             }
-          } else {}
+          } else if (subjectCase === "3") {
+            session.problemFramework = Prompts.subject_3 + content;
+          } else if (subjectCase === "4") {
+            session.problemFramework = Prompts.subject_4 + content;
+          } else if (subjectCase === "5") {
+            session.problemFramework = Prompts.subject_5 + content;
+          }
 
           const framework: ChatMessage[] = [ createMessage({ role: "system" as const, content: session.problemFramework }) ];
           sendMessages = framework.concat(recentMessages);
@@ -639,160 +619,125 @@ export const useChatStore = createPersistStore(
 
         else {
 
-          // call switch
-          let studentCase: string = "";
-          const messagesSwitch = sendMessages.concat(createMessage({ role: "system" as const, content: Prompts.switch }));
-          console.log("[Switch Messages]", messagesSwitch);
-          await api.llm.chat({
-            messages: messagesSwitch,
-            config: { ...modelConfig, stream: false },
-            onFinish: (message) => {
-              const match = message.match(/[1-8]/);
-              if (match) {
-                studentCase = match[0];
-              } else {
-                studentCase = "2";
-              }
-            },
-            onError(error) {
-                  const isAborted = error.message?.includes?.("aborted");
-                  botMessage.content +=
-                    "\n\n" +
-                    prettyObject({
-                      error: true,
-                      message: error.message,
-                    });
-                  botMessage.streaming = false;
-                  userMessage.isError = !isAborted;
-                  botMessage.isError = !isAborted;
-                  get().updateTargetSession(session, (session) => {
-                    session.messages = session.messages.concat();
-                  });
-                  ChatControllerPool.remove(
-                    session.id,
-                    botMessage.id ?? messageIndex,
-                  );
-                  console.error("[Chat] failed ", error);
-                },
-          });
-          console.log("[Student Case]", studentCase);
+          if (subjectCase === "1" || subjectCase === "2") {
 
-          switch (studentCase) {
-            case "1":
-              currentRole = Prompts.case_1;
-              break;
-            case "2":
-              currentRole = Prompts.case_2;
-              break;
-            case "3":
-              currentRole = Prompts.case_3;
-              break;
-            case "4":
-              currentRole = Prompts.case_4;
-              break;
-            case "5":
-              currentRole = Prompts.case_5;
-              break;
-            case "6":
-              currentRole = Prompts.case_6;
-              break;
-            case "7":
-              currentRole = Prompts.case_7;
-              break;
-            case "8":
-              // call case8_switch
-              let case8Case = "";
-              const messagesCase8Switch: ChatMessage[] = sendMessages.concat(createMessage({ role: "system", content: Prompts.case_8_switch }));
-              await api.llm.chat({
-                messages: messagesCase8Switch,
-                config: { ...modelConfig, stream: false },
-                onFinish: (message) => {
-                  const match = message.match(/[1-4]/);
-                  if (match) {
-                    case8Case = match[0];
-                  } else {
-                    case8Case = "4";
-                  }
-                },
-                onError(error) {
-                      const isAborted = error.message?.includes?.("aborted");
-                      botMessage.content +=
-                        "\n\n" +
-                        prettyObject({
-                          error: true,
-                          message: error.message,
-                        });
-                      botMessage.streaming = false;
-                      userMessage.isError = !isAborted;
-                      botMessage.isError = !isAborted;
-                      get().updateTargetSession(session, (session) => {
-                        session.messages = session.messages.concat();
-                      });
-                      ChatControllerPool.remove(
-                        session.id,
-                        botMessage.id ?? messageIndex,
-                      );
-                      console.error("[Chat] failed ", error);
-                    },
-              });
+            // call switch
+            let studentCase: string = "";
+            const messagesSwitch = sendMessages.concat(createMessage({ role: "system" as const, content: Prompts.switch }));
+            console.log("[Switch Messages]", messagesSwitch);
+            await api.llm.chat({
+              messages: messagesSwitch,
+              config: { ...modelConfig, stream: false },
+              onFinish: (message) => {
+                const match = message.match(/[1-8]/);
+                if (match) {
+                  studentCase = match[0];
+                } else {
+                  studentCase = "2";
+                }
+                // console.log("[Student Case]", studentCase);
+              },
+              onError(error) {
+                    console.error("[Error] in call_switch:", error);
+                  },
+            });
 
-              // call case8_framework
-              let frameworkPrompt = ""
-              if (case8Case === "1") {
+            switch (studentCase) {
+              case "1":
+                currentRole = Prompts.case_1;
+                break;
+              case "2":
                 currentRole = Prompts.case_2;
                 break;
-              } else if (case8Case === "2") {
-                frameworkPrompt = Prompts.case_8_framework.replace("{content}", Prompts.case_8_content_2);
-              } else if (case8Case === "3") {
-                frameworkPrompt = Prompts.case_8_framework.replace("{content}", Prompts.case_8_content_3);
-              } else if (case8Case === "4") {
-                frameworkPrompt = Prompts.case_8_framework.replace("{content}", Prompts.case_8_content_4);
-              }
-              const messagesCase8Framework = sendMessages.concat(createMessage({ role: "system", content: frameworkPrompt }));
-              await api.llm.chat({
-                messages: messagesCase8Framework,
-                config: { ...modelConfig, stream: false },
-                onFinish: (message) => {
-                  session.problemFramework = message
-                },
-                onError(error) {
-                      const isAborted = error.message?.includes?.("aborted");
-                      botMessage.content +=
-                        "\n\n" +
-                        prettyObject({
-                          error: true,
-                          message: error.message,
-                        });
-                      botMessage.streaming = false;
-                      userMessage.isError = !isAborted;
-                      botMessage.isError = !isAborted;
-                      get().updateTargetSession(session, (session) => {
-                        session.messages = session.messages.concat();
-                      });
-                      ChatControllerPool.remove(
-                        session.id,
-                        botMessage.id ?? messageIndex,
-                      );
-                      console.error("[Chat] failed ", error);
-                    },
-              });
-              currentRole = Prompts.case_8;
-              break;
-            default:
-              currentRole = Prompts.teacher;
-              break;
+              case "3":
+                currentRole = Prompts.case_3;
+                break;
+              case "4":
+                currentRole = Prompts.case_4;
+                break;
+              case "5":
+                currentRole = Prompts.case_5;
+                break;
+              case "6":
+                currentRole = Prompts.case_6;
+                break;
+              case "7":
+                currentRole = Prompts.case_7;
+                break;
+              case "8":
+
+                // call case8_switch
+                let case8Case = "";
+                let case8Message = ""
+                const messagesCase8Switch: ChatMessage[] = sendMessages.concat(createMessage({ role: "system", content: Prompts.case_8_switch }));
+                await api.llm.chat({
+                  messages: messagesCase8Switch,
+                  config: { ...modelConfig, stream: false },
+                  onFinish: (message) => {
+                    const match = message.match(/【([1-4])】/);
+                    if (match) {
+                      case8Case = match[1];
+                    } else {
+                      case8Case = "4";
+                    }
+                    // console.log("[Case8 Switch]", case8Case);
+                    case8Message = match ? message.replace(/【[1-4]】/, "") : message;
+                    // console.log("[Case8 Message]", case8Message)
+                  },
+                  onError(error) {
+                    console.error("[Error] in case8_switch:", error);
+                  },
+                });
+
+                // call case8_framework
+                let frameworkPrompt = ""
+                if (case8Case === "1") {
+                  currentRole = Prompts.case_2;
+                  break;
+                } else if (case8Case === "2") {
+                  frameworkPrompt = Prompts.case_8_framework.replace("{content}", Prompts.case_8_content_2 + "（" + case8Message + "）。");
+                } else if (case8Case === "3") {
+                  frameworkPrompt = Prompts.case_8_framework.replace("{content}", Prompts.case_8_content_3 + "（" + case8Message + "）。");
+                } else if (case8Case === "4") {
+                  frameworkPrompt = Prompts.case_8_framework.replace("{content}", Prompts.case_8_content_4 + "（" + case8Message + "）。");
+                }
+                const messagesCase8Framework = sendMessages.concat(createMessage({ role: "system", content: frameworkPrompt }));
+                await api.llm.chat({
+                  messages: messagesCase8Framework,
+                  config: { ...modelConfig, stream: false },
+                  onFinish: (message) => {
+                    session.problemFramework = message
+                    console.log("[Case8 Framework]", message)
+                  },
+                  onError(error) {
+                    console.error("[Error] in case8_framework:", error);
+                  },
+                });
+                currentRole = Prompts.case_8;
+                break;
+              default:
+                currentRole = Prompts.teacher;
+                break;
+            }
           }
         }
 
         // call case
-        let messagesCase = sendMessages.concat(createMessage({ role: "system", content: currentRole }));
-        if (currentRole === Prompts.case_8) {
-          messagesCase = messagesCase.concat(createMessage({ role: "system", content: "修改后的解题步骤：" + session.problemFramework }))
+        let messagesCase: ChatMessage[];
+        let configCase: LLMConfig;
+        if (subjectCase === "1" || subjectCase === "2") {
+          messagesCase = sendMessages.concat(createMessage({ role: "system", content: currentRole }));
+          if (currentRole === Prompts.case_8) {
+            messagesCase = messagesCase.concat(createMessage({ role: "system", content: "修改后的解题步骤：" + session.problemFramework }))
+          }
+          configCase = { ...modelConfig, stream: true }
+        } else {
+          messagesCase = sendMessages;
+          configCase = { ...modelConfig, stream: true, enableQuarkSearch: true }
         }
-        console.warn("[SendMessages]", messagesCase);
         api.llm.chat({
           messages: messagesCase,
-          config: { ...modelConfig, stream: true },
+          config: configCase,
           onUpdate(message) {
             botMessage.streaming = true;
             if (message) {
@@ -846,7 +791,7 @@ export const useChatStore = createPersistStore(
               botMessage.id ?? messageIndex,
             );
 
-            console.error("[Chat] failed ", error);
+            console.error("[Error] in call_case:", error);
           },
           onController(controller) {
             // collect controller for stop/retry
