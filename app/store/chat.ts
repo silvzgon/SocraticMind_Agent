@@ -91,6 +91,7 @@ export interface ChatSession {
 
   memoryPrompt: string;
   problemFramework?: string;
+  subjectCase?: string;
   messages: ChatMessage[];
   stat: ChatStat;
   lastUpdate: number;
@@ -113,6 +114,7 @@ function createEmptySession(): ChatSession {
     userId: localStorage.getItem("userId") || undefined,
     memoryPrompt: "",
     problemFramework: undefined,
+    subjectCase: undefined,
     messages: [],
     stat: {
       tokenCount: 0,
@@ -501,16 +503,17 @@ export const useChatStore = createPersistStore(
 
         // 实现自定义苏格拉底逻辑
 
-        let subjectCase: string = "";
         let currentRole: string = "";
-        if (!session.problemFramework && !isMcpResponse) {
+        if (!session.problemFramework && !session.subjectCase && !isMcpResponse) {
           const api: ClientApi = getClientApi(modelConfig.providerName);
 
           // call switch_subject
+          let subjectCase: string = "";
           const messagesSwitchSubject: ChatMessage[] = [
             createMessage({ role: "system" as const, content: Prompts.switch_subject }),
             createMessage({ role: "user"   as const, content: content }),
           ];
+          // console.log("[Switch Subject Message]", messagesSwitchSubject)
           await api.llm.chat({
             messages: messagesSwitchSubject,
             config: { ...modelConfig, stream: false },
@@ -521,7 +524,8 @@ export const useChatStore = createPersistStore(
               } else {
                 subjectCase = "5";
               }
-              console.log("[Subject]", subjectCase);
+              session.subjectCase = subjectCase;
+              // console.log("[Subject]", subjectCase);
             },
             onError: (error) => {
               console.error("[Error] in switch_subject:", error);
@@ -536,6 +540,7 @@ export const useChatStore = createPersistStore(
               createMessage({ role: "system" as const, content: Prompts.solve_problem }),
               createMessage({ role: "user"   as const, content: content }),
             ];
+            // console.log("[Solve Problem Message]", messagesSolveProblem)
             const solve = await new Promise<string>((resolve, reject) => {
               api.llm.chat({
                 messages: messagesSolveProblem,
@@ -559,6 +564,7 @@ export const useChatStore = createPersistStore(
               createMessage({ role: "system" as const, content: Prompts.solve_problem }),
               createMessage({ role: "user"   as const, content: solve }),
             ];
+            // console.log("[Get Framework Message]", messagesGetFramework)
             let framework: string = "";
             await api.llm.chat({
               messages: messagesGetFramework,
@@ -581,6 +587,7 @@ export const useChatStore = createPersistStore(
               createMessage({ role: "user"   as const, content: steps }),
             ];
             let judge: string = ""
+            // console.log("[Check Framework Message]", messagesCheckFramework)
             while (!judge.includes("【通过】")) {
               await api.llm.chat({
                 messages: messagesCheckFramework,
@@ -614,17 +621,16 @@ export const useChatStore = createPersistStore(
 
           const framework: ChatMessage[] = [ createMessage({ role: "system" as const, content: session.problemFramework }) ];
           sendMessages = framework.concat(recentMessages);
-          console.log("[SendMessages]", sendMessages);
         }
 
         else {
 
-          if (subjectCase === "1" || subjectCase === "2") {
+          if (session.subjectCase === "1" || session.subjectCase === "2") {
 
             // call switch
             let studentCase: string = "";
             const messagesSwitch = sendMessages.concat(createMessage({ role: "system" as const, content: Prompts.switch }));
-            console.log("[Switch Messages]", messagesSwitch);
+            // console.log("[Switch Messages]", messagesSwitch);
             await api.llm.chat({
               messages: messagesSwitch,
               config: { ...modelConfig, stream: false },
@@ -670,6 +676,7 @@ export const useChatStore = createPersistStore(
                 let case8Case = "";
                 let case8Message = ""
                 const messagesCase8Switch: ChatMessage[] = sendMessages.concat(createMessage({ role: "system", content: Prompts.case_8_switch }));
+                // console.log("[Case8 Switch Message]", messagesCase8Switch)
                 await api.llm.chat({
                   messages: messagesCase8Switch,
                   config: { ...modelConfig, stream: false },
@@ -702,12 +709,13 @@ export const useChatStore = createPersistStore(
                   frameworkPrompt = Prompts.case_8_framework.replace("{content}", Prompts.case_8_content_4 + "（" + case8Message + "）。");
                 }
                 const messagesCase8Framework = sendMessages.concat(createMessage({ role: "system", content: frameworkPrompt }));
+                // console.log("[Case8 Switch Framework]", messagesCase8Framework)
                 await api.llm.chat({
                   messages: messagesCase8Framework,
                   config: { ...modelConfig, stream: false },
                   onFinish: (message) => {
                     session.problemFramework = message
-                    console.log("[Case8 Framework]", message)
+                    // console.log("[Case8 Framework]", message)
                   },
                   onError(error) {
                     console.error("[Error] in case8_framework:", error);
@@ -725,7 +733,7 @@ export const useChatStore = createPersistStore(
         // call case
         let messagesCase: ChatMessage[];
         let configCase: LLMConfig;
-        if (subjectCase === "1" || subjectCase === "2") {
+        if (session.subjectCase === "1" || session.subjectCase === "2") {
           messagesCase = sendMessages.concat(createMessage({ role: "system", content: currentRole }));
           if (currentRole === Prompts.case_8) {
             messagesCase = messagesCase.concat(createMessage({ role: "system", content: "修改后的解题步骤：" + session.problemFramework }))
@@ -735,6 +743,7 @@ export const useChatStore = createPersistStore(
           messagesCase = sendMessages;
           configCase = { ...modelConfig, stream: true, enableQuarkSearch: true }
         }
+        // console.log("[Case Message]", messagesCase);
         api.llm.chat({
           messages: messagesCase,
           config: configCase,
