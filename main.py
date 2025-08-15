@@ -452,12 +452,11 @@ async def websocket_multimodal_tool_chat_stream(websocket: WebSocket):
         )
 
         try:
-            messages_user = [msg for msg in request.messages if msg.role == "user"]
-            if not messages_user:
-                raise HTTPException(status_code=400, detail="no uer input in request messages.")
-            image_path = messages_user[-1].content
-
             if request.enableOCR:
+                messages_user = [msg for msg in request.messages if msg.role == "user"]
+                if not messages_user:
+                    raise HTTPException(status_code=400, detail="no uer input in request messages.")
+                image_path = messages_user[-1].content
 
                 if request.ocrType:
                     image = image_path
