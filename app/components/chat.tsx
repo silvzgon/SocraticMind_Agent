@@ -497,6 +497,7 @@ export function ChatActions(props: {
   setAttachImages: (images: string[]) => void;
   setUploading: (uploading: boolean) => void;
   showPromptModal: () => void;
+  showUploadModal: () => void;
   scrollToBottom: () => void;
   showPromptHints: () => void;
   hitBottom: boolean;
@@ -623,7 +624,7 @@ export function ChatActions(props: {
         )}
         {props.hitBottom && (
           <ChatAction
-            onClick={props.showPromptModal}
+            onClick={props.showUploadModal}
             text={Locale.Chat.InputActions.Upload}
             icon={<UploadIcon />}
           />
@@ -1443,6 +1444,9 @@ function _Chat() {
       : -1;
 
   const [showPromptModal, setShowPromptModal] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadMode, setUploadMode] = useState<"fileReading" | "ocr" | "">("");
+  const [filePath, setFilePath] = useState("");
 
   const clientConfig = useMemo(() => getClientConfig(), []);
 
@@ -2058,6 +2062,7 @@ function _Chat() {
                 setAttachImages={setAttachImages}
                 setUploading={setUploading}
                 showPromptModal={() => setShowPromptModal(true)}
+                showUploadModal={() => setShowUploadModal(true)}
                 scrollToBottom={scrollToBottom}
                 hitBottom={hitBottom}
                 uploading={uploading}
@@ -2168,6 +2173,98 @@ function _Chat() {
       {showShortcutKeyModal && (
         <ShortcutKeyModal onClose={() => setShowShortcutKeyModal(false)} />
       )}
+
+      {showUploadModal && (
+        <div className="modal-mask">
+          <Modal
+            title={Locale.Upload.Title}
+            onClose={() => {
+              setShowUploadModal(false);
+            }}
+            actions={[
+              <IconButton
+                key="confirm"
+                type="primary"
+                text={Locale.Upload.Confirm}
+                icon={<ConfirmIcon />}
+                onClick={() => {
+                  console.log("[Addon] select mode:", uploadMode);
+                  console.log("[Addon] file path:", filePath);
+                  setShowUploadModal(false);
+                }}
+              />,
+              <IconButton
+                key="cancel"
+                text={Locale.Upload.Cancel}
+                icon={<CancelIcon />}
+                style={{
+                  background: "#f1f1f1",
+                  border: "1px solid #d0d0d0",
+                }}
+                onClick={() => {
+                  setShowUploadModal(false);
+                  setUploadMode("");
+                  setFilePath("");
+                }}
+              />,
+            ]}
+          >
+            <List>
+              <ListItem
+                title={Locale.Upload.AddonType}
+                subTitle={Locale.Upload.AddonSupport}
+              >
+                <select
+                  style={{
+                    width: "50%",
+                    boxSizing: "border-box",
+                    padding: "8px 12px",
+                    color: "#767676",
+                    borderRadius: "6px",
+                    border: "1px solid #ccc",
+                    outline: "none",
+                    marginTop: "4px",
+                    appearance: "none",
+                    WebkitAppearance: "none",
+                    MozAppearance: "none",
+                    backgroundImage: `url("data:image/svg+xml;charset=UTF-8,<svg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23767676' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'></polyline></svg>")`,
+                    backgroundRepeat: "no-repeat",
+                    backgroundPosition: "right 12px center",
+                    paddingRight: "30px",
+                  }}
+                  value={uploadMode}
+                  onChange={e => setUploadMode(e.target.value as "fileReading" | "ocr")}
+                >
+                  <option value="">{Locale.Upload.Select}</option>
+                  <option value="fileReading">{Locale.Upload.FileReading}</option>
+                  <option value="ocr">{Locale.Upload.OCR}</option>
+                </select>
+              </ListItem>
+              <ListItem
+                title={Locale.Upload.FilePath}
+                subTitle={Locale.Upload.FilePathPrompt}
+              >
+                <input
+                  type="text"
+                  placeholder={Locale.Upload.FilePathPlacehole}
+                  value={filePath}
+                  onInput={e => setFilePath((e.target as HTMLInputElement).value)}
+                  style={{
+                    width: "100%",
+                    boxSizing: "border-box",
+                    padding: "8px 12px",
+                    borderRadius: "6px",
+                    border: "1px solid #ccc",
+                    outline: "none",
+                    marginTop: "4px",
+                  }}
+                />
+              </ListItem>
+            </List>
+          </Modal>
+        </div>
+      )}
+
     </>
   );
 }

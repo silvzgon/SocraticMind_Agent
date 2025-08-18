@@ -1,3 +1,4 @@
+import { title } from "process";
 import { getClientConfig } from "../config/client";
 import { SubmitKey } from "../store/config";
 import { SAAS_CHAT_UTM_URL } from "@/app/constant";
@@ -630,6 +631,19 @@ const cn = {
         SubTitle: "值越大，回复越随机",
       },
     },
+  },
+  Upload: {
+    Title: "附件上传",
+    AddonType: "附件类型",
+    AddonSupport: "支持图片/文档的上传与识别",
+    Select: "请选择需要进行的操作类型",
+    FileReading: "文档理解 (TXT, DOCX, PDF, XLSX, EPUB, MOBI, MD, CSV)",
+    OCR: "文字提取 (BMP, JPEG, PNG, TIFF, WEBP, HEIC)",
+    FilePath: "文件路径",
+    FilePathPrompt: "请填写要上传或识别的文件路径",
+    FilePathPlacehole: "例如：/path/to/file.jpg",
+    Confirm: "确认",
+    Cancel: "清除",
   },
   Store: {
     DefaultTopic: "新的聊天",
