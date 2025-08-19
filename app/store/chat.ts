@@ -92,6 +92,11 @@ export interface ChatSession {
   memoryPrompt: string;
   problemFramework?: string;
   subjectCase?: string;
+  enableFileReading?: boolean,
+  enableOCR?: boolean,
+  ocrType?: boolean,  // false/undefined: local_path, true: url
+  addonPath?: string,
+
   messages: ChatMessage[];
   stat: ChatStat;
   lastUpdate: number;
@@ -115,6 +120,10 @@ function createEmptySession(): ChatSession {
     memoryPrompt: "",
     problemFramework: undefined,
     subjectCase: undefined,
+    enableFileReading: undefined,
+    enableOCR: undefined,
+    ocrType: undefined,
+    addonPath: undefined,
     messages: [],
     stat: {
       tokenCount: 0,
@@ -739,6 +748,9 @@ export const useChatStore = createPersistStore(
             messagesCase = messagesCase.concat(createMessage({ role: "system", content: "修改后的解题步骤：" + session.problemFramework }))
           }
           configCase = { ...modelConfig, stream: true }
+        } else if (session.subjectCase === "4" ) {
+          messagesCase = sendMessages;
+          configCase = { ...modelConfig, stream: true, enableFileReading: true, addonPath: session.addonPath }
         } else {
           messagesCase = sendMessages;
           configCase = { ...modelConfig, stream: true, enableQuarkSearch: true }

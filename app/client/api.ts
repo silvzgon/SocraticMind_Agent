@@ -63,14 +63,15 @@ export interface LLMConfig {
   quality?: DalleRequestPayload["quality"];
   style?: DalleRequestPayload["style"];
   enableCodeInterpreter?: boolean;
-  enableCalculator?:boolean;
-  enableTextToImage?:boolean;
-  enableQuarkSearch?:boolean;
-  enableGenerateQRcode?:boolean;
-  enableGithubSearch?:boolean;
-  enableOCR?:boolean;
-  ocrType?:boolean; // false/undefined: local_path, true: url
-  enableFileReading?:boolean;
+  enableCalculator?: boolean;
+  enableTextToImage?: boolean;
+  enableQuarkSearch?: boolean;
+  enableGenerateQRcode?: boolean;
+  enableGithubSearch?: boolean;
+  enableFileReading?: boolean;
+  enableOCR?: boolean;
+  ocrType?: boolean;  // false/undefined: local_path, true: url
+  addonPath?: string;
 }
 
 export interface SpeechOptions {

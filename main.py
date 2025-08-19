@@ -360,9 +360,10 @@ async def websocket_assistant_tool_chat_stream(websocket: WebSocket):
 
 class MultimodalToolChatRequest(BaseModel):
     model: str
+    enableFileReading: bool
     enableOCR        : bool
     ocrType          : bool
-    enableFileReading: bool
+    addonPath: str
     messages: List[ChatMessage]
 
 @app.post("/api/multimodal_tool_chat")
@@ -371,10 +372,7 @@ def multimodal_tool_chat(request: MultimodalToolChatRequest):
     try:
 
         if request.enableOCR:
-            messages_user = [msg for msg in request.messages if msg.role == "user"]
-            if not messages_user:
-                raise HTTPException(status_code=400, detail="no uer input in request messages.")
-            image_path = messages_user[-1].content
+            image_path = request.addonPath
 
             if request.ocrType:
                 image = image_path
@@ -411,10 +409,7 @@ def multimodal_tool_chat(request: MultimodalToolChatRequest):
             return {"result": response["output"]["choices"][0]["message"].content[0]["text"]}
 
         elif request.enableFileReading:
-            messages_user = [msg for msg in request.messages if msg.role == "user"]
-            if not messages_user:
-                raise HTTPException(status_code=400, detail="no uer input in request messages.")
-            file_path = messages_user[-1].content
+            file_path = request.addonPath
 
             client = openai.OpenAI(
                 api_key=os.getenv("DASHSCOPE_API_KEY"),
@@ -427,7 +422,7 @@ def multimodal_tool_chat(request: MultimodalToolChatRequest):
                 messages=[
                     {'role': 'system', 'content': 'You are a helpful assistant.'},
                     {'role': 'system', 'content': f'fileid://{file_object.id}'},
-                    {'role': 'user', 'content': '这段代码实现了什么?'}
+                    {'role': 'user', 'content': '这篇论文讲了什么？'}
                 ],
             )
             return {"result": completion.choices[0].message.content}
@@ -445,18 +440,16 @@ async def websocket_multimodal_tool_chat_stream(websocket: WebSocket):
         messages = data.get("messages", [])
         request = MultimodalToolChatRequest(
             model = data.get("model"),
+            enableFileReading = data.get("enableFileReading"),
             enableOCR         = data.get("enableOCR"),
             ocrType           = data.get("ocrType"),
-            enableFileReading = data.get("enableFileReading"),
+            addonPath = data.get("addonPath"),
             messages = messages,
         )
 
         try:
             if request.enableOCR:
-                messages_user = [msg for msg in request.messages if msg.role == "user"]
-                if not messages_user:
-                    raise HTTPException(status_code=400, detail="no uer input in request messages.")
-                image_path = messages_user[-1].content
+                image_path = request.addonPath
 
                 if request.ocrType:
                     image = image_path
@@ -499,10 +492,7 @@ async def websocket_multimodal_tool_chat_stream(websocket: WebSocket):
                         pass
 
             elif request.enableFileReading:
-                messages_user = [msg for msg in request.messages if msg.role == "user"]
-                if not messages_user:
-                    raise HTTPException(status_code=400, detail="no uer input in request messages.")
-                file_path = messages_user[-1].content
+                file_path = request.addonPath
 
                 client = openai.OpenAI(
                     api_key=os.getenv("DASHSCOPE_API_KEY"),
@@ -515,7 +505,7 @@ async def websocket_multimodal_tool_chat_stream(websocket: WebSocket):
                     messages=[
                         {'role': 'system', 'content': 'You are a helpful assistant.'},
                         {'role': 'system', 'content': f'fileid://{file_object.id}'},
-                        {'role': 'user', 'content': '这段代码实现了什么?'}
+                        {'role': 'user', 'content': '这篇论文讲了些什么?'}
                     ],
                     stream=True,
                     stream_options={"include_usage": True},

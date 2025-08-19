@@ -1445,8 +1445,8 @@ function _Chat() {
 
   const [showPromptModal, setShowPromptModal] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
-  const [uploadMode, setUploadMode] = useState<"fileReading" | "ocr" | "">("");
-  const [filePath, setFilePath] = useState("");
+  const [uploadMode, setUploadMode] = useState<"fileReading" | "ocr" | "">(session.enableFileReading ? "fileReading" : session.enableOCR ? "ocr" : "");
+  const [filePath, setFilePath] = useState(session.addonPath ?? "");
 
   const clientConfig = useMemo(() => getClientConfig(), []);
 
@@ -1520,6 +1520,20 @@ function _Chat() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // set upload setting to config
+  useEffect(() => {
+    chatStore.updateTargetSession(session, (session) => {
+      if (uploadMode === "fileReading") {
+        session.enableFileReading = true;
+        session.addonPath = filePath;
+      } else if (uploadMode === "ocr") {
+        session.enableOCR = true;
+        session.ocrType = !!filePath && /^https?:\/\//.test(filePath);
+        session.addonPath = filePath;
+      }
+    });
+  }, [showUploadModal, uploadMode, filePath]);
 
   const handlePaste = useCallback(
     async (event: React.ClipboardEvent<HTMLTextAreaElement>) => {
@@ -2219,7 +2233,7 @@ function _Chat() {
                     width: "50%",
                     boxSizing: "border-box",
                     padding: "8px 12px",
-                    color: "#767676",
+                    color: uploadMode === "fileReading" || uploadMode === "ocr" ? "#323232" : "#767676",
                     borderRadius: "6px",
                     border: "1px solid #ccc",
                     outline: "none",
@@ -2235,9 +2249,9 @@ function _Chat() {
                   value={uploadMode}
                   onChange={e => setUploadMode(e.target.value as "fileReading" | "ocr")}
                 >
-                  <option value="">{Locale.Upload.Select}</option>
-                  <option value="fileReading">{Locale.Upload.FileReading}</option>
-                  <option value="ocr">{Locale.Upload.OCR}</option>
+                  <option value="" style={{ color: "#767676" }}>{Locale.Upload.Select}</option>
+                  <option value="fileReading" style={{ color: "#767676" }}>{Locale.Upload.FileReading}</option>
+                  <option value="ocr" style={{ color: "#767676" }}>{Locale.Upload.OCR}</option>
                 </select>
               </ListItem>
               <ListItem
