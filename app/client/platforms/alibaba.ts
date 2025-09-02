@@ -162,7 +162,11 @@ export class QwenApi implements LLMApi {
           }
           if (data.chunk) {
             result += data.chunk;
-            options.onUpdate?.(result, data.chunk);
+            try {
+              options.onUpdate?.(result, data.chunk);
+            } catch (updateError) {
+              console.warn("[Assistant tool] onUpdate error:", updateError);
+            }
           }
         } catch (e) {
           console.warn("[Assistant tool] json parsing fail:", e);
@@ -184,10 +188,12 @@ export class QwenApi implements LLMApi {
   private async _multimodalToolChat(options: ChatOptions): Promise<string> {
     const payload = {
       model: options.config.model,
+      enableFileReading: !! options.config.enableFileReading,
+      fileReadingType:   !! options.config.haveRead,
       enableOCR:         !! options.config.enableOCR,
       ocrType:           !! options.config.ocrType,
-      enableFileReading: !! options.config.enableFileReading,
       addonPath: options.config.addonPath,
+      messages: options.messages,
     };
   
     try {
@@ -219,10 +225,12 @@ export class QwenApi implements LLMApi {
       ws.onopen = () => {
         const payload = {
           model: options.config.model,
+          enableFileReading: !! options.config.enableFileReading,
+          fileReadingType:   !! options.config.haveRead,
           enableOCR:         !! options.config.enableOCR,
           ocrType:           !! options.config.ocrType,
-          enableFileReading: !! options.config.enableFileReading,
           addonPath: options.config.addonPath,
+          messages: options.messages,
         };
         ws.send(JSON.stringify(payload));
       };
@@ -244,7 +252,11 @@ export class QwenApi implements LLMApi {
           }
           if (data.chunk) {
             result += data.chunk;
-            options.onUpdate?.(result, data.chunk);
+            try {
+              options.onUpdate?.(result, data.chunk);
+            } catch (updateError) {
+              console.warn("[Multimodal tool] onUpdate error:", updateError);
+            }
           }
         } catch (e) {
           console.warn("[Multimodal tool] json parsing fail:", e);
@@ -272,6 +284,14 @@ export class QwenApi implements LLMApi {
       },
     };
 
+    if (!! options.config.enableFileReading || (!! options.config.enableOCR && ! options.config.haveRead)) {
+      if (options.config.stream)
+        this._multimodalToolChatStream(options);
+      else
+        this._multimodalToolChat(options);
+      return;
+    }
+
     if (
       !! options.config.enableCodeInterpreter ||
       !! options.config.enableCalculator      ||
@@ -284,17 +304,6 @@ export class QwenApi implements LLMApi {
         this._assistantToolChatStream(options);
       else
         this._assistantToolChat(options);
-      return;
-    }
-
-    if (
-      !! options.config.enableOCR ||
-      !! options.config.enableFileReading && ! options.config.haveRead
-    ) {
-      if (options.config.stream && !options.config.enableFileReading)
-        this._multimodalToolChatStream(options);
-      else
-        this._multimodalToolChat(options);
       return;
     }
 

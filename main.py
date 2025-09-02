@@ -361,13 +361,31 @@ async def websocket_assistant_tool_chat_stream(websocket: WebSocket):
 class MultimodalToolChatRequest(BaseModel):
     model: str
     enableFileReading: bool
+    fileReadingType  : bool
     enableOCR        : bool
     ocrType          : bool
     addonPath: str
+    messages: List[ChatMessage]
+
+def check_messages(messages: List[ChatMessage]):
+    if not messages or messages[-1].role == "user":
+        return messages
+
+    last_user_idx = None
+    for i in reversed(range(len(messages))):
+        if messages[i].role == "user":
+            last_user_idx = i
+            break
+
+    if last_user_idx is None or last_user_idx == len(messages) - 1:
+        return messages
+
+    user_msg = messages.pop(last_user_idx)
+    messages.append(user_msg)
+    return messages
 
 @app.post("/api/multimodal_tool_chat")
 def multimodal_tool_chat(request: MultimodalToolChatRequest):
-
     try:
 
         if request.enableOCR:
@@ -408,15 +426,21 @@ def multimodal_tool_chat(request: MultimodalToolChatRequest):
             return {"result": "图像解析结果：\n" + response["output"]["choices"][0]["message"].content[0]["text"]}
 
         elif request.enableFileReading:
-            file_path = request.addonPath
-
             client = openai.OpenAI(
                 api_key=os.getenv("DASHSCOPE_API_KEY"),
                 base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
             )
-            file_object = client.files.create(file=Path(file_path), purpose="file-extract")
+            if request.fileReadingType:
+                completion = client.chat.completions.create(
+                    model="qwen-long",
+                    messages=check_messages(request.messages),
+                )
+                return {"result": completion.choices[0].message.content}
 
-            return {"result": f'fileid://{file_object.id}'}
+            else:
+                file_path = request.addonPath
+                file_object = client.files.create(file=Path(file_path), purpose="file-extract")
+                return {"result": f'fileid://{file_object.id}'}
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"[Multimodal tool] error: {e}")
@@ -428,12 +452,15 @@ async def websocket_multimodal_tool_chat_stream(websocket: WebSocket):
     try:
         data = await websocket.receive_json()
 
+        messages = data.get("messages", [])
         request = MultimodalToolChatRequest(
             model = data.get("model"),
             enableFileReading = data.get("enableFileReading"),
+            fileReadingType   = data.get("fileReadingType"),
             enableOCR         = data.get("enableOCR"),
             ocrType           = data.get("ocrType"),
             addonPath = data.get("addonPath"),
+            messages = messages,
         )
 
         try:
@@ -480,30 +507,33 @@ async def websocket_multimodal_tool_chat_stream(websocket: WebSocket):
                     except:
                         pass
 
-            # elif request.enableFileReading:
-            #     file_path = request.addonPath
+            elif request.enableFileReading:
+                client = openai.OpenAI(
+                    api_key=os.getenv("DASHSCOPE_API_KEY"),
+                    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+                )
 
-            #     client = openai.OpenAI(
-            #         api_key=os.getenv("DASHSCOPE_API_KEY"),
-            #         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-            #     )
-            #     file_object = client.files.create(file=Path(file_path), purpose="file-extract")
+                if request.fileReadingType:
+                    completion = client.chat.completions.create(
+                        model="qwen-long",
+                        messages=check_messages(request.messages),
+                        stream=True,
+                        stream_options={"include_usage": True},
+                    )
+                    for chunk in completion:
+                        try: 
+                            await websocket.send_json({"chunk": chunk.choices[0].delta.content})
+                        except:
+                            pass
+                    await websocket.send_json({"chunk": f"[DONE]"})
+                    await websocket.close()
 
-            #     completion = client.chat.completions.create(
-            #         model="qwen-long",
-            #         messages=[
-            #             {'role': 'system', 'content': 'You are a helpful assistant.'},
-            #             {'role': 'system', 'content': f'fileid://{file_object.id}'},
-            #             {'role': 'user', 'content': '请你分析一下这篇文档的内容，并给出一个简要的总结。'},
-            #         ],
-            #         stream=True,
-            #         stream_options={"include_usage": True},
-            #     )
-            #     for chunk in completion:
-            #         try: 
-            #             await websocket.send_json({"chunk": chunk.choices[0].delta.content})
-            #         except:
-            #             pass
+                else:
+                    file_path = request.addonPath
+                    file_object = client.files.create(file=Path(file_path), purpose="file-extract")
+                    await websocket.send_json({"chunk": f"fileid://{file_object.id}"})
+                    await websocket.send_json({"chunk": f"[DONE]"})
+                    await websocket.close()   
                 
         except Exception as e:
             await websocket.send_json({"error": f"[Multimodal tool] error: {str(e)}"})

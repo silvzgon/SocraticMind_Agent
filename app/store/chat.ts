@@ -526,8 +526,8 @@ export const useChatStore = createPersistStore(
         let addon: string = "";
         if (
           modelConfig.addonPath &&
-          modelConfig.enableFileReading && !modelConfig.haveRead ||
-          modelConfig.enableOCR
+          !session.haveRead &&
+          (modelConfig.enableFileReading || modelConfig.enableOCR)
         ) {
           const messagesParseAddon: ChatMessage[] = [createMessage({ role: "user" as const, content: "FLCL: file loader & character locator" })]
           // console.log("[Parse Addon Message]", messagesParseAddon)
@@ -537,6 +537,7 @@ export const useChatStore = createPersistStore(
               config: { ...modelConfig, stream: false },
               onFinish: (message) => {
                 addon = message;
+                modelConfig.haveRead = true;
                 session.haveRead = true;
                 session.addonContent = addon;
                 sendMessages = sendMessages.concat(createMessage({ role: "system" as const, content: addon }));
@@ -557,8 +558,8 @@ export const useChatStore = createPersistStore(
           // call switch_subject
           const messagesSwitchSubject: ChatMessage[] = [
             createMessage({ role: "system" as const, content: Prompts.switch_subject }),
+            ...(addon != "" ? [createMessage({ role: "system" as const, content: addon })] : []),
             createMessage({ role: "user"   as const, content: content }),
-            ...(addon != "" ? [createMessage({ role: "system" as const, content: addon })] : [])
           ];
           // console.log("[Switch Subject Message]", messagesSwitchSubject)
           session.subjectCase = await new Promise<string>((resolve, reject) => {
@@ -590,8 +591,8 @@ export const useChatStore = createPersistStore(
             // call solve_problem
             const messagesSolveProblem: ChatMessage[] = [
               createMessage({ role: "system" as const, content: Prompts.solve_problem }),
+              ...(addon != "" ? [createMessage({ role: "system" as const, content: addon })] : []),
               createMessage({ role: "user"   as const, content: content }),
-              ...(addon != "" ? [createMessage({ role: "system" as const, content: addon })] : [])
             ];
             // console.log("[Solve Problem Message]", messagesSolveProblem)
             const solve = await new Promise<string>((resolve, reject) => {
@@ -614,8 +615,8 @@ export const useChatStore = createPersistStore(
             const newModelConfig: typeof modelConfig = { ...modelConfig, model: session.subjectCase === "1" ? "qwen-math-plus" : "qwen3-coder-plus" };
             const messagesGetFramework: ChatMessage[] = [
               createMessage({ role: "system" as const, content: Prompts.solve_problem }),
+              ...(addon != "" ? [createMessage({ role: "system" as const, content: addon })] : []),
               createMessage({ role: "user"   as const, content: solve }),
-              ...(addon != "" ? [createMessage({ role: "system" as const, content: addon })] : [])
             ];
             // console.log("[Get Framework Message]", messagesGetFramework)
             let framework: string = await new Promise<string>((resolve, reject) => {
@@ -640,8 +641,8 @@ export const useChatStore = createPersistStore(
             const user = Prompts.check_framework_user;
             let messagesCheckFramework: ChatMessage[] = [
               createMessage({ role: "system" as const, content: system }),
+              ...(addon != "" ? [createMessage({ role: "system" as const, content: addon })] : []),
               createMessage({ role: "user"   as const, content: steps }),
-              ...(addon != "" ? [createMessage({ role: "system" as const, content: addon })] : [])
             ];
             let judge: string = ""
             // console.log("[Check Framework Message]", messagesCheckFramework)

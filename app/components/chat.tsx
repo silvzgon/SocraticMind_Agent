@@ -1531,6 +1531,7 @@ function _Chat() {
       } else if (uploadMode === "ocr") {
         session.enableOCR = true;
         session.ocrType = !!filePath && /^https?:\/\//.test(filePath);
+        session.haveRead = false;
         session.addonPath = filePath;
       }
     });
