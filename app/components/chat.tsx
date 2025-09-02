@@ -1526,6 +1526,7 @@ function _Chat() {
     chatStore.updateTargetSession(session, (session) => {
       if (uploadMode === "fileReading") {
         session.enableFileReading = true;
+        session.haveRead = false;
         session.addonPath = filePath;
       } else if (uploadMode === "ocr") {
         session.enableOCR = true;
@@ -2202,8 +2203,6 @@ function _Chat() {
                 text={Locale.Upload.Confirm}
                 icon={<ConfirmIcon />}
                 onClick={() => {
-                  console.log("[Addon] select mode:", uploadMode);
-                  console.log("[Addon] file path:", filePath);
                   setShowUploadModal(false);
                 }}
               />,

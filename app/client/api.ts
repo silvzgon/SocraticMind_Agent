@@ -69,6 +69,7 @@ export interface LLMConfig {
   enableGenerateQRcode?: boolean;
   enableGithubSearch?: boolean;
   enableFileReading?: boolean;
+  haveRead?: boolean;
   enableOCR?: boolean;
   ocrType?: boolean;  // false/undefined: local_path, true: url
   addonPath?: string;

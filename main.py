@@ -269,7 +269,7 @@ def get_user_input(msgs):
 
 def verify_status_code(res):
     if res.status_code != 200:
-        raise Exception(f"dashScope fail, with status code: {res.status_code}")
+        raise Exception(f"dashscope fail with status code: {res.status_code}")
 
 @app.post("/api/assistant_tool_chat")
 def assistant_tool_chat(request: AssistantToolChatRequest):
@@ -364,7 +364,6 @@ class MultimodalToolChatRequest(BaseModel):
     enableOCR        : bool
     ocrType          : bool
     addonPath: str
-    messages: List[ChatMessage]
 
 @app.post("/api/multimodal_tool_chat")
 def multimodal_tool_chat(request: MultimodalToolChatRequest):
@@ -398,7 +397,7 @@ def multimodal_tool_chat(request: MultimodalToolChatRequest):
                         "enable_rotate": True,
                     },
                     {
-                        "text": "请提取图像中的题目与答题过程信息。要求准确无误的提取上述关键信息、不要遗漏和捏造虚假信息，模糊或者强光遮挡的单个文字可以用英文问号?代替。返回数据格式以json方式输出，格式为：{'题目': '...', '答题过程': '...'}"
+                        "text": "请提取图像中的文字内容。要求准确无误的提取上述关键信息、不要遗漏和捏造虚假信息，模糊的单个文字可以用英文问号?代替。请你直接输出提取的文字内容，不要添加任何多余的描述。如果提取的内容中包含数学公式，请使用LaTeX语法进行描述。"
                     },],
             }]
             response = dashscope.MultiModalConversation.call(
@@ -406,7 +405,7 @@ def multimodal_tool_chat(request: MultimodalToolChatRequest):
                 model="qwen-vl-ocr",
                 messages=messages,
             )
-            return {"result": response["output"]["choices"][0]["message"].content[0]["text"]}
+            return {"result": "图像解析结果：\n" + response["output"]["choices"][0]["message"].content[0]["text"]}
 
         elif request.enableFileReading:
             file_path = request.addonPath
@@ -417,15 +416,7 @@ def multimodal_tool_chat(request: MultimodalToolChatRequest):
             )
             file_object = client.files.create(file=Path(file_path), purpose="file-extract")
 
-            completion = client.chat.completions.create(
-                model="qwen-long",
-                messages=[
-                    {'role': 'system', 'content': 'You are a helpful assistant.'},
-                    {'role': 'system', 'content': f'fileid://{file_object.id}'},
-                    {'role': 'user', 'content': '这篇论文讲了什么？'}
-                ],
-            )
-            return {"result": completion.choices[0].message.content}
+            return {"result": f'fileid://{file_object.id}'}
         
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"[Multimodal tool] error: {e}")
@@ -437,14 +428,12 @@ async def websocket_multimodal_tool_chat_stream(websocket: WebSocket):
     try:
         data = await websocket.receive_json()
 
-        messages = data.get("messages", [])
         request = MultimodalToolChatRequest(
             model = data.get("model"),
             enableFileReading = data.get("enableFileReading"),
             enableOCR         = data.get("enableOCR"),
             ocrType           = data.get("ocrType"),
             addonPath = data.get("addonPath"),
-            messages = messages,
         )
 
         try:
@@ -475,7 +464,7 @@ async def websocket_multimodal_tool_chat_stream(websocket: WebSocket):
                             "enable_rotate": True,
                         },
                         {
-                            "text": "请提取图像中的题目与答题过程信息。要求准确无误的提取上述关键信息、不要遗漏和捏造虚假信息，模糊或者强光遮挡的单个文字可以用英文问号?代替。返回数据格式以json方式输出，格式为：{'题目': '...', '答题过程': '...'}"
+                            "text": "请提取图像中的文字内容。要求准确无误的提取上述关键信息、不要遗漏和捏造虚假信息，模糊的单个文字可以用英文问号?代替。请你直接输出提取的文字内容，不要添加任何多余的描述。如果提取的内容中包含数学公式，请使用LaTeX语法进行描述。"
                         },],
                 }]
                 responses = dashscope.MultiModalConversation.call(
@@ -491,30 +480,30 @@ async def websocket_multimodal_tool_chat_stream(websocket: WebSocket):
                     except:
                         pass
 
-            elif request.enableFileReading:
-                file_path = request.addonPath
+            # elif request.enableFileReading:
+            #     file_path = request.addonPath
 
-                client = openai.OpenAI(
-                    api_key=os.getenv("DASHSCOPE_API_KEY"),
-                    base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
-                )
-                file_object = client.files.create(file=Path(file_path), purpose="file-extract")
+            #     client = openai.OpenAI(
+            #         api_key=os.getenv("DASHSCOPE_API_KEY"),
+            #         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
+            #     )
+            #     file_object = client.files.create(file=Path(file_path), purpose="file-extract")
 
-                completion = client.chat.completions.create(
-                    model="qwen-long",
-                    messages=[
-                        {'role': 'system', 'content': 'You are a helpful assistant.'},
-                        {'role': 'system', 'content': f'fileid://{file_object.id}'},
-                        {'role': 'user', 'content': '这篇论文讲了些什么?'}
-                    ],
-                    stream=True,
-                    stream_options={"include_usage": True},
-                )
-                for chunk in completion:
-                    try: 
-                        await websocket.send_json({"chunk": chunk.choices[0].delta.content})
-                    except:
-                        pass
+            #     completion = client.chat.completions.create(
+            #         model="qwen-long",
+            #         messages=[
+            #             {'role': 'system', 'content': 'You are a helpful assistant.'},
+            #             {'role': 'system', 'content': f'fileid://{file_object.id}'},
+            #             {'role': 'user', 'content': '请你分析一下这篇文档的内容，并给出一个简要的总结。'},
+            #         ],
+            #         stream=True,
+            #         stream_options={"include_usage": True},
+            #     )
+            #     for chunk in completion:
+            #         try: 
+            #             await websocket.send_json({"chunk": chunk.choices[0].delta.content})
+            #         except:
+            #             pass
                 
         except Exception as e:
             await websocket.send_json({"error": f"[Multimodal tool] error: {str(e)}"})

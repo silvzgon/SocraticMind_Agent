@@ -188,7 +188,6 @@ export class QwenApi implements LLMApi {
       ocrType:           !! options.config.ocrType,
       enableFileReading: !! options.config.enableFileReading,
       addonPath: options.config.addonPath,
-      messages: options.messages,
     };
   
     try {
@@ -224,7 +223,6 @@ export class QwenApi implements LLMApi {
           ocrType:           !! options.config.ocrType,
           enableFileReading: !! options.config.enableFileReading,
           addonPath: options.config.addonPath,
-          messages: options.messages,
         };
         ws.send(JSON.stringify(payload));
       };
@@ -291,9 +289,9 @@ export class QwenApi implements LLMApi {
 
     if (
       !! options.config.enableOCR ||
-      !! options.config.enableFileReading
+      !! options.config.enableFileReading && ! options.config.haveRead
     ) {
-      if (options.config.stream)
+      if (options.config.stream && !options.config.enableFileReading)
         this._multimodalToolChatStream(options);
       else
         this._multimodalToolChat(options);
